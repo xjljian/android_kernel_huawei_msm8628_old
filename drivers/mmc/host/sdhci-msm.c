@@ -2,7 +2,7 @@
  * drivers/mmc/host/sdhci-msm.c - Qualcomm MSM SDHCI Platform
  * driver source file
  *
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -317,7 +317,6 @@ struct sdhci_msm_host {
 	bool tuning_done;
 	bool calibration_done;
 	u8 saved_tuning_phase;
-	atomic_t controller_clock;
 };
 
 enum vdd_io_level {
@@ -861,14 +860,6 @@ retry:
 		memset(data_buf, 0, size);
 		mmc_wait_for_req(mmc, &mrq);
 
-		/*
-		 * wait for 146 MCLK cycles for the card to send out the data
-		 * and thus move to TRANS state. As the MCLK would be minimum
-		 * 200MHz when tuning is performed, we need maximum 0.73us
-		 * delay. To be on safer side 1ms delay is given.
-		 */
-		if (cmd.error)
-			usleep_range(1000, 1200);
 		if (!cmd.error && !data.error &&
 			!memcmp(data_buf, tuning_block_pattern, size)) {
 			/* tuning is successful at this tuning point */
@@ -2222,50 +2213,6 @@ static unsigned int sdhci_msm_get_sup_clk_rate(struct sdhci_host *host,
 	return sel_clk;
 }
 
-static int sdhci_msm_enable_controller_clock(struct sdhci_host *host)
-{
-	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
-	struct sdhci_msm_host *msm_host = pltfm_host->priv;
-	int rc = 0;
-
-	if (atomic_read(&msm_host->controller_clock))
-		return 0;
-
-	sdhci_msm_bus_voting(host, 1);
-
-	if (!IS_ERR(msm_host->pclk)) {
-		rc = clk_prepare_enable(msm_host->pclk);
-		if (rc) {
-			pr_err("%s: %s: failed to enable the pclk with error %d\n",
-			       mmc_hostname(host->mmc), __func__, rc);
-			goto remove_vote;
-		}
-	}
-
-	rc = clk_prepare_enable(msm_host->clk);
-	if (rc) {
-		pr_err("%s: %s: failed to enable the host-clk with error %d\n",
-		       mmc_hostname(host->mmc), __func__, rc);
-		goto disable_pclk;
-	}
-
-	atomic_set(&msm_host->controller_clock, 1);
-	pr_debug("%s: %s: enabled controller clock\n",
-			mmc_hostname(host->mmc), __func__);
-	goto out;
-
-disable_pclk:
-	if (!IS_ERR(msm_host->pclk))
-		clk_disable_unprepare(msm_host->pclk);
-remove_vote:
-	if (msm_host->msm_bus_vote.client_handle)
-		sdhci_msm_bus_cancel_work_and_set_vote(host, 0);
-out:
-	return rc;
-}
-
-
-
 static int sdhci_msm_prepare_clocks(struct sdhci_host *host, bool enable)
 {
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
@@ -2276,32 +2223,36 @@ static int sdhci_msm_prepare_clocks(struct sdhci_host *host, bool enable)
 		pr_debug("%s: request to enable clocks\n",
 				mmc_hostname(host->mmc));
 
-		/*
-		 * The bus-width or the clock rate might have changed
-		 * after controller clocks are enbaled, update bus vote
-		 * in such case.
-		 */
-		if (atomic_read(&msm_host->controller_clock))
-			sdhci_msm_bus_voting(host, 1);
-
-		rc = sdhci_msm_enable_controller_clock(host);
-		if (rc)
-			goto remove_vote;
+		sdhci_msm_bus_voting(host, 1);
 
 		if (!IS_ERR_OR_NULL(msm_host->bus_clk)) {
 			rc = clk_prepare_enable(msm_host->bus_clk);
 			if (rc) {
 				pr_err("%s: %s: failed to enable the bus-clock with error %d\n",
 					mmc_hostname(host->mmc), __func__, rc);
-				goto disable_controller_clk;
+				goto remove_vote;
 			}
+		}
+		if (!IS_ERR(msm_host->pclk)) {
+			rc = clk_prepare_enable(msm_host->pclk);
+			if (rc) {
+				pr_err("%s: %s: failed to enable the pclk with error %d\n",
+					mmc_hostname(host->mmc), __func__, rc);
+				goto disable_bus_clk;
+			}
+		}
+		rc = clk_prepare_enable(msm_host->clk);
+		if (rc) {
+			pr_err("%s: %s: failed to enable the host-clk with error %d\n",
+				mmc_hostname(host->mmc), __func__, rc);
+			goto disable_pclk;
 		}
 		if (!IS_ERR(msm_host->ff_clk)) {
 			rc = clk_prepare_enable(msm_host->ff_clk);
 			if (rc) {
 				pr_err("%s: %s: failed to enable the ff_clk with error %d\n",
 					mmc_hostname(host->mmc), __func__, rc);
-				goto disable_bus_clk;
+				goto disable_clk;
 			}
 		}
 		if (!IS_ERR(msm_host->sleep_clk)) {
@@ -2329,7 +2280,6 @@ static int sdhci_msm_prepare_clocks(struct sdhci_host *host, bool enable)
 		if (!IS_ERR_OR_NULL(msm_host->bus_clk))
 			clk_disable_unprepare(msm_host->bus_clk);
 
-		atomic_set(&msm_host->controller_clock, 0);
 		sdhci_msm_bus_voting(host, 0);
 	}
 	atomic_set(&msm_host->clks_on, enable);
@@ -2337,15 +2287,15 @@ static int sdhci_msm_prepare_clocks(struct sdhci_host *host, bool enable)
 disable_ff_clk:
 	if (!IS_ERR_OR_NULL(msm_host->ff_clk))
 		clk_disable_unprepare(msm_host->ff_clk);
+disable_clk:
+	if (!IS_ERR_OR_NULL(msm_host->clk))
+		clk_disable_unprepare(msm_host->clk);
+disable_pclk:
+	if (!IS_ERR_OR_NULL(msm_host->pclk))
+		clk_disable_unprepare(msm_host->pclk);
 disable_bus_clk:
 	if (!IS_ERR_OR_NULL(msm_host->bus_clk))
 		clk_disable_unprepare(msm_host->bus_clk);
-disable_controller_clk:
-	if (!IS_ERR_OR_NULL(msm_host->clk))
-		clk_disable_unprepare(msm_host->clk);
-	if (!IS_ERR_OR_NULL(msm_host->pclk))
-		clk_disable_unprepare(msm_host->pclk);
-	atomic_set(&msm_host->controller_clock, 0);
 remove_vote:
 	if (msm_host->msm_bus_vote.client_handle)
 		sdhci_msm_bus_cancel_work_and_set_vote(host, 0);
@@ -2363,12 +2313,6 @@ static void sdhci_msm_set_clock(struct sdhci_host *host, unsigned int clock)
 	bool curr_pwrsave;
 
 	if (!clock) {
-		/*
-		 * disable pwrsave to ensure clock is not auto-gated until
-		 * the rate is >400KHz (initialization complete).
-		 */
-		writel_relaxed(readl_relaxed(host->ioaddr + CORE_VENDOR_SPEC) &
-			~CORE_CLK_PWRSAVE, host->ioaddr + CORE_VENDOR_SPEC);
 		sdhci_msm_prepare_clocks(host, false);
 		host->clock = clock;
 		return;
@@ -2614,7 +2558,6 @@ static struct sdhci_ops sdhci_msm_ops = {
 	.get_min_clock = sdhci_msm_get_min_clock,
 	.get_max_clock = sdhci_msm_get_max_clock,
 	.disable_data_xfer = sdhci_msm_disable_data_xfer,
-	.enable_controller_clock = sdhci_msm_enable_controller_clock,
 };
 
 static int __devinit sdhci_msm_probe(struct platform_device *pdev)
@@ -2694,7 +2637,6 @@ static int __devinit sdhci_msm_probe(struct platform_device *pdev)
 		if (ret)
 			goto bus_clk_disable;
 	}
-	atomic_set(&msm_host->controller_clock, 1);
 
 	/* Setup SDC MMC clock */
 	msm_host->clk = devm_clk_get(&pdev->dev, "core_clk");
@@ -2775,7 +2717,7 @@ static int __devinit sdhci_msm_probe(struct platform_device *pdev)
 	 * max. 1ms for reset completion.
 	 */
 	ret = readl_poll_timeout(msm_host->core_mem + CORE_POWER,
-			pwr, !(pwr & CORE_SW_RST), 10, 1000);
+			pwr, !(pwr & CORE_SW_RST), 100, 10);
 
 	if (ret) {
 		dev_err(&pdev->dev, "reset failed (%d)\n", ret);
@@ -2818,6 +2760,7 @@ static int __devinit sdhci_msm_probe(struct platform_device *pdev)
 	host->quirks |= SDHCI_QUIRK_SINGLE_POWER_WRITE;
 	host->quirks |= SDHCI_QUIRK_CAP_CLOCK_BASE_BROKEN;
 	host->quirks2 |= SDHCI_QUIRK2_ALWAYS_USE_BASE_CLOCK;
+	host->quirks2 |= SDHCI_QUIRK2_IGNORE_CMDCRC_FOR_TUNING;
 	host->quirks2 |= SDHCI_QUIRK2_USE_MAX_DISCARD_SIZE;
 	host->quirks2 |= SDHCI_QUIRK2_IGNORE_DATATOUT_FOR_R1BCMD;
 	host->quirks2 |= SDHCI_QUIRK2_BROKEN_PRESET_VALUE;
@@ -2897,7 +2840,6 @@ static int __devinit sdhci_msm_probe(struct platform_device *pdev)
 	msm_host->mmc->caps2 |= MMC_CAP2_CLK_SCALE;
 	msm_host->mmc->caps2 |= MMC_CAP2_STOP_REQUEST;
 	msm_host->mmc->caps2 |= MMC_CAP2_ASYNC_SDIO_IRQ_4BIT_MODE;
-	msm_host->mmc->caps2 |= MMC_CAP2_CORE_PM;
 	msm_host->mmc->pm_caps |= MMC_PM_KEEP_POWER;
 
 	if (msm_host->pdata->nonremovable)
@@ -2954,7 +2896,7 @@ static int __devinit sdhci_msm_probe(struct platform_device *pdev)
 	if (ret)
 		pr_err("%s: %s: pm_runtime_set_active failed: err: %d\n",
 		       mmc_hostname(host->mmc), __func__, ret);
-	else if (mmc_use_core_runtime_pm(host->mmc))
+	else
 		pm_runtime_enable(&pdev->dev);
 
 	/* Successful initialization */
@@ -3126,7 +3068,6 @@ static const struct dev_pm_ops sdhci_msm_pmops = {
 #endif
 static const struct of_device_id sdhci_msm_dt_match[] = {
 	{.compatible = "qcom,sdhci-msm"},
-	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, sdhci_msm_dt_match);
 

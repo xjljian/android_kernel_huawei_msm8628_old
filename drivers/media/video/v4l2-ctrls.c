@@ -310,7 +310,6 @@ const char * const *v4l2_ctrl_get_menu(u32 id)
 		"Scalable High",
 		"Scalable High Intra",
 		"Multiview High",
-		"Constrained High",
 		NULL,
 	};
 	static const char * const vui_sar_idc[] = {

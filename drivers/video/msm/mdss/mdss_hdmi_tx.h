@@ -54,12 +54,10 @@ struct hdmi_tx_ctrl {
 	struct hdmi_audio audio_data;
 
 	struct mutex mutex;
-	struct mutex lut_lock;
 	struct kobject *kobj;
 	struct switch_dev sdev;
 	struct switch_dev audio_sdev;
 	struct workqueue_struct *workq;
-	spinlock_t hpd_state_lock;
 
 	uint32_t video_resolution;
 
@@ -70,7 +68,6 @@ struct hdmi_tx_ctrl {
 	u32 hpd_off_pending;
 	u32 hpd_feature_on;
 	u32 hpd_initialized;
-	u32 vote_hdmi_core_on;
 	u8  timing_gen_on;
 	u32 mhl_max_pclk;
 	u8  mhl_hpd_on;
@@ -80,7 +77,6 @@ struct hdmi_tx_ctrl {
 	struct work_struct power_off_work;
 
 	bool hdcp_feature_on;
-	bool ds_registered;
 	u32 present_hdcp;
 
 	u8 spd_vendor_name[9];

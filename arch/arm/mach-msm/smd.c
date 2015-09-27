@@ -1035,19 +1035,12 @@ static unsigned ch_read_buffer(struct smd_channel *ch, void **ptr)
 {
 	unsigned head = ch->half_ch->get_head(ch->recv);
 	unsigned tail = ch->half_ch->get_tail(ch->recv);
-	unsigned fifo_size = ch->fifo_size;
-
-	BUG_ON(fifo_size >= SZ_1M);
-	BUG_ON(head >= fifo_size);
-	BUG_ON(tail >= fifo_size);
-	BUG_ON(OVERFLOW_ADD_UNSIGNED(uintptr_t, (uintptr_t)ch->recv_data,
-								 tail));
-
 	*ptr = (void *) (ch->recv_data + tail);
+
 	if (tail <= head)
 		return head - tail;
 	else
-		return fifo_size - tail;
+		return ch->fifo_size - tail;
 }
 
 static int read_intr_blocked(struct smd_channel *ch)
@@ -1147,23 +1140,16 @@ static unsigned ch_write_buffer(struct smd_channel *ch, void **ptr)
 {
 	unsigned head = ch->half_ch->get_head(ch->send);
 	unsigned tail = ch->half_ch->get_tail(ch->send);
-	unsigned fifo_size = ch->fifo_size;
-
-	BUG_ON(fifo_size >= SZ_1M);
-	BUG_ON(head >= fifo_size);
-	BUG_ON(tail >= fifo_size);
-	BUG_ON(OVERFLOW_ADD_UNSIGNED(uintptr_t, (uintptr_t)ch->send_data,
-								head));
-
 	*ptr = (void *) (ch->send_data + head);
+
 	if (head < tail) {
 		return tail - head - SMD_FIFO_FULL_RESERVE;
 	} else {
 		if (tail < SMD_FIFO_FULL_RESERVE)
-			return fifo_size + tail - head
+			return ch->fifo_size + tail - head
 					- SMD_FIFO_FULL_RESERVE;
 		else
-			return fifo_size - head;
+			return ch->fifo_size - head;
 	}
 }
 
@@ -2261,15 +2247,13 @@ EXPORT_SYMBOL(smd_disable_read_intr);
  * particular channel.
  * @ch:      open channel handle to use for the edge
  * @mask:    1 = mask interrupts; 0 = unmask interrupts
- * @cpumask  cpumask for the next cpu scheduled to be woken up
  * @returns: 0 for success; < 0 for failure
  *
  * Note that this enables/disables all interrupts from the remote subsystem for
  * all channels.  As such, it should be used with care and only for specific
  * use cases such as power-collapse sequencing.
  */
-int smd_mask_receive_interrupt(smd_channel_t *ch, bool mask,
-		const struct cpumask *cpumask)
+int smd_mask_receive_interrupt(smd_channel_t *ch, bool mask)
 {
 	struct irq_chip *irq_chip;
 	struct irq_data *irq_data;
@@ -2298,8 +2282,6 @@ int smd_mask_receive_interrupt(smd_channel_t *ch, bool mask,
 		SMD_POWER_INFO("SMD Masking interrupts from %s\n",
 				edge_to_pids[ch->type].subsys_name);
 		irq_chip->irq_mask(irq_data);
-		if (cpumask)
-			irq_set_affinity(int_cfg->irq_id, cpumask);
 	} else {
 		SMD_POWER_INFO("SMD Unmasking interrupts from %s\n",
 				edge_to_pids[ch->type].subsys_name);

@@ -579,6 +579,11 @@ int msm_camera_power_up(struct msm_camera_power_ctrl_t *ctrl,
 	return 0;
 power_up_failed:
 	pr_err("%s:%d failed\n", __func__, __LINE__);
+	if (device_type == MSM_CAMERA_PLATFORM_DEVICE) {
+		sensor_i2c_client->i2c_func_tbl->i2c_util(
+			sensor_i2c_client, MSM_CCI_RELEASE);
+	}
+
 	for (index--; index >= 0; index--) {
 		CDBG("%s index %d\n", __func__, index);
 		power_setting = &ctrl->power_setting[index];
@@ -664,9 +669,7 @@ int msm_camera_power_down(struct msm_camera_power_ctrl_t *ctrl,
 			}
 			gpio_set_value_cansleep(
 				ctrl->gpio_conf->gpio_num_info->gpio_num
-				[power_setting->seq_val],
-				ctrl->gpio_conf->gpio_num_info->gpio_num
-				[power_setting->config_val]);
+				[power_setting->seq_val], GPIOF_OUT_INIT_LOW);
 			break;
 		case SENSOR_VREG:
 			if (power_setting->seq_val >= CAM_VREG_MAX) {

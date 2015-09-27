@@ -2,7 +2,7 @@
  *
  * Copyright (C) 2008 Google, Inc.
  * Author: Brian Swetland <swetland@google.com>
- * Copyright (c) 2009-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2009-2013, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -229,11 +229,7 @@ enum usb_vdd_value {
  *              between 1 to 7.
  * @l1_supported: enable link power management support.
  * @dpdm_pulldown_added: Indicates whether pull down resistors are
- *		connected on data lines or not.
- * @enable_ahb2ahb_bypass: Indicates whether enable AHB2AHB BYPASS
- *		mode with controller in device mode.
- * @disable_retention_with_vdd_min: Indicates whether to enable allowing
- *		VDD min without putting PHY into retention
+		connected on data lines or not.
  */
 struct msm_otg_platform_data {
 	int *phy_init_seq;
@@ -262,8 +258,6 @@ struct msm_otg_platform_data {
 	int log2_itc;
 	bool l1_supported;
 	bool dpdm_pulldown_added;
-	bool enable_ahb2ahb_bypass;
-	bool disable_retention_with_vdd_min;
 };
 
 /* phy related flags */
@@ -346,10 +340,6 @@ struct msm_otg_platform_data {
  * @chg_check_timer: The timer used to implement the workaround to detect
  *               very slow plug in of wall charger.
  * @ui_enabled: USB Intterupt is enabled or disabled.
- * @pm_done: It is used to increment the pm counter using pm_runtime_get_sync.
-	     This handles the race case when PM resume thread returns before
-	     the charger detection starts. When USB is disconnected pm_done
-	     is set to true.
  */
 struct msm_otg {
 	struct usb_phy phy;
@@ -434,11 +424,6 @@ struct msm_otg {
 	 * voltage regulator(VDDCX) during host mode.
 	 */
 #define ALLOW_HOST_PHY_RETENTION	BIT(4)
-	/*
-	* Allow VDD minimization without putting PHY into retention
-	* for fixing PHY current leakage issue when LDOs are turned off.
-	*/
-#define ALLOW_VDD_MIN_WITH_RETENTION_DISABLED BIT(5)
 	unsigned long lpm_flags;
 #define PHY_PWR_COLLAPSED		BIT(0)
 #define PHY_RETENTIONED			BIT(1)
@@ -466,8 +451,6 @@ struct msm_otg {
 	bool ext_chg_active;
 	struct completion ext_chg_wait;
 	int ui_enabled;
-	bool pm_done;
-	struct qpnp_vadc_chip	*vadc_dev;
 };
 
 struct ci13xxx_platform_data {
@@ -479,7 +462,6 @@ struct ci13xxx_platform_data {
 	int log2_itc;
 	void *prv_data;
 	bool l1_supported;
-	bool enable_ahb2ahb_bypass;
 };
 
 /**

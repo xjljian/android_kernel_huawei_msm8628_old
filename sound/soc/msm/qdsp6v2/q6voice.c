@@ -29,7 +29,7 @@
 #include "q6voice.h"
 
 
-#define TIMEOUT_MS 500
+#define TIMEOUT_MS 200
 
 
 #define CMD_STATUS_SUCCESS 0
@@ -350,11 +350,6 @@ static struct voice_data *voice_get_session_by_idx(int idx)
 				NULL : &common.voice[idx]);
 }
 
-static bool is_voice_session(u32 session_id)
-{
-	return (session_id == common.voice[VOC_PATH_PASSIVE].session_id);
-}
-
 static bool is_voip_session(u32 session_id)
 {
 	return (session_id == common.voice[VOC_PATH_FULL].session_id);
@@ -632,8 +627,6 @@ static int voice_create_mvm_cvs_session(struct voice_data *v)
 	/* send cmd to create mvm session and wait for response */
 
 	if (!mvm_handle) {
-		memset(mvm_session_cmd.mvm_session.name, 0,
-			sizeof(mvm_session_cmd.mvm_session.name));
 		if (!is_voip_session(v->session_id)) {
 			mvm_session_cmd.hdr.hdr_field = APR_HDR_FIELD(
 						APR_MSG_TYPE_SEQ_CMD,
@@ -654,19 +647,19 @@ static int voice_create_mvm_cvs_session(struct voice_data *v)
 			if (is_volte_session(v->session_id)) {
 				strlcpy(mvm_session_cmd.mvm_session.name,
 				"default volte voice",
-				strlen("default volte voice")+1);
+				sizeof(mvm_session_cmd.mvm_session.name));
 			} else if (is_voice2_session(v->session_id)) {
 				strlcpy(mvm_session_cmd.mvm_session.name,
 				VOICE2_SESSION_VSID_STR,
-				strlen(VOICE2_SESSION_VSID_STR)+1);
+				sizeof(mvm_session_cmd.mvm_session.name));
 			} else if (is_qchat_session(v->session_id)) {
 				strlcpy(mvm_session_cmd.mvm_session.name,
 				QCHAT_SESSION_VSID_STR,
-				strlen(QCHAT_SESSION_VSID_STR)+1);
+				sizeof(mvm_session_cmd.mvm_session.name));
 			} else {
 				strlcpy(mvm_session_cmd.mvm_session.name,
 				"default modem voice",
-				strlen("default modem voice")+1);
+				sizeof(mvm_session_cmd.mvm_session.name));
 			}
 
 			v->mvm_state = CMD_STATUS_FAIL;
@@ -702,7 +695,7 @@ static int voice_create_mvm_cvs_session(struct voice_data *v)
 				VSS_IMVM_CMD_CREATE_FULL_CONTROL_SESSION;
 			strlcpy(mvm_session_cmd.mvm_session.name,
 				"default voip",
-				strlen("default voip")+1);
+				sizeof(mvm_session_cmd.mvm_session.name));
 
 			v->mvm_state = CMD_STATUS_FAIL;
 
@@ -725,8 +718,6 @@ static int voice_create_mvm_cvs_session(struct voice_data *v)
 	}
 	/* send cmd to create cvs session */
 	if (!cvs_handle) {
-		memset(cvs_session_cmd.cvs_session.name, 0,
-			sizeof(cvs_session_cmd.cvs_session.name));
 		if (!is_voip_session(v->session_id)) {
 			pr_debug("%s: creating CVS passive session\n",
 				 __func__);
@@ -748,19 +739,19 @@ static int voice_create_mvm_cvs_session(struct voice_data *v)
 			if (is_volte_session(v->session_id)) {
 				strlcpy(cvs_session_cmd.cvs_session.name,
 				"default volte voice",
-				strlen("default volte voice")+1);
+				sizeof(cvs_session_cmd.cvs_session.name));
 			} else if (is_voice2_session(v->session_id)) {
 				strlcpy(cvs_session_cmd.cvs_session.name,
 				VOICE2_SESSION_VSID_STR,
-				strlen(VOICE2_SESSION_VSID_STR)+1);
+				sizeof(cvs_session_cmd.cvs_session.name));
 			} else if (is_qchat_session(v->session_id)) {
 				strlcpy(cvs_session_cmd.cvs_session.name,
 				QCHAT_SESSION_VSID_STR,
-				strlen(QCHAT_SESSION_VSID_STR)+1);
+				sizeof(cvs_session_cmd.cvs_session.name));
 			} else {
 			strlcpy(cvs_session_cmd.cvs_session.name,
 				"default modem voice",
-				strlen("default modem voice")+1);
+				sizeof(cvs_session_cmd.cvs_session.name));
 			}
 			v->cvs_state = CMD_STATUS_FAIL;
 
@@ -808,7 +799,7 @@ static int voice_create_mvm_cvs_session(struct voice_data *v)
 					       common.mvs_info.network_type;
 			strlcpy(cvs_full_ctl_cmd.cvs_session.name,
 				"default q6 voice",
-				strlen("default q6 voice")+1);
+				sizeof(cvs_full_ctl_cmd.cvs_session.name));
 
 			v->cvs_state = CMD_STATUS_FAIL;
 
@@ -947,7 +938,6 @@ static int voice_destroy_mvm_cvs_session(struct voice_data *v)
 
 	if (is_voip_session(v->session_id) ||
 	    is_qchat_session(v->session_id) ||
-	    is_volte_session(v->session_id) ||
 	    v->voc_state == VOC_ERROR) {
 		/* Destroy CVS. */
 		pr_debug("%s: CVS destroy session\n", __func__);
@@ -1871,18 +1861,10 @@ static int voice_send_set_device_cmd(struct voice_data *v)
 
 	cvp_setdev_cmd.cvp_set_device_v2.tx_port_id = v->dev_tx.port_id;
 	cvp_setdev_cmd.cvp_set_device_v2.rx_port_id = v->dev_rx.port_id;
-
-	if (common.ec_ref_ext) {
-		cvp_setdev_cmd.cvp_set_device_v2.vocproc_mode =
-				VSS_IVOCPROC_VOCPROC_MODE_EC_EXT_MIXING;
-		cvp_setdev_cmd.cvp_set_device_v2.ec_ref_port_id =
-				common.ec_port_id;
-	} else {
-		cvp_setdev_cmd.cvp_set_device_v2.vocproc_mode =
+	cvp_setdev_cmd.cvp_set_device_v2.vocproc_mode =
 				    VSS_IVOCPROC_VOCPROC_MODE_EC_INT_MIXING;
-		cvp_setdev_cmd.cvp_set_device_v2.ec_ref_port_id =
+	cvp_setdev_cmd.cvp_set_device_v2.ec_ref_port_id =
 				    VSS_IVOCPROC_PORT_ID_NONE;
-	}
 	pr_debug("topology=%d , tx_port_id=%d, rx_port_id=%d\n",
 		cvp_setdev_cmd.cvp_set_device_v2.tx_topology_id,
 		cvp_setdev_cmd.cvp_set_device_v2.tx_port_id,
@@ -3044,17 +3026,10 @@ static int voice_setup_vocproc(struct voice_data *v)
 	cvp_session_cmd.cvp_session.rx_port_id = v->dev_rx.port_id;
 	cvp_session_cmd.cvp_session.profile_id =
 					 VSS_ICOMMON_CAL_NETWORK_ID_NONE;
-	if (common.ec_ref_ext) {
-		cvp_session_cmd.cvp_session.vocproc_mode =
-				VSS_IVOCPROC_VOCPROC_MODE_EC_EXT_MIXING;
-		cvp_session_cmd.cvp_session.ec_ref_port_id =
-					common.ec_port_id;
-	} else {
-		cvp_session_cmd.cvp_session.vocproc_mode =
+	cvp_session_cmd.cvp_session.vocproc_mode =
 				 VSS_IVOCPROC_VOCPROC_MODE_EC_INT_MIXING;
-		cvp_session_cmd.cvp_session.ec_ref_port_id =
+	cvp_session_cmd.cvp_session.ec_ref_port_id =
 						 VSS_IVOCPROC_PORT_ID_NONE;
-	}
 
 	pr_debug("tx_topology: %d tx_port_id=%d, rx_port_id=%d, mode: 0x%x\n",
 		cvp_session_cmd.cvp_session.tx_topology_id,
@@ -3412,10 +3387,6 @@ static int voice_destroy_vocproc(struct voice_data *v)
 	}
 	mvm_handle = voice_get_mvm_handle(v);
 	cvp_handle = voice_get_cvp_handle(v);
-
-	/* disable slowtalk if st_enable is set */
-	if (v->st_enable)
-		voice_send_set_pp_enable_cmd(v, MODULE_ID_VOICE_MODULE_ST, 0);
 
 	/* stop playback or recording */
 	v->music_info.force = 1;
@@ -4286,10 +4257,8 @@ int voc_start_playback(uint32_t set, uint16_t port_id)
 		v = voice_get_session(voc_get_session_id(VOICE_SESSION_NAME));
 	else if (port_id == VOICE2_PLAYBACK_TX)
 		v = voice_get_session(voc_get_session_id(VOICE2_SESSION_NAME));
-	else
-		pr_err("%s: Invalid port_id 0x%x", __func__, port_id);
 
-	while (v != NULL) {
+	if (v != NULL) {
 		mutex_lock(&v->lock);
 		v->music_info.port_id = port_id;
 		v->music_info.play_enable = set;
@@ -4309,17 +4278,8 @@ int voc_start_playback(uint32_t set, uint16_t port_id)
 		}
 
 		mutex_unlock(&v->lock);
-
-		/* Voice and VoLTE call use the same pseudo port and hence
-		 * use the same mixer control. So enable incall delivery
-		 * for VoLTE as well with Voice.
-		 */
-		if (is_voice_session(v->session_id)) {
-			v = voice_get_session(voc_get_session_id(
-							VOLTE_SESSION_NAME));
-		} else {
-			break;
-		}
+	} else {
+		pr_err("%s: Invalid port_id 0x%x", __func__, port_id);
 	}
 
 	return ret;
@@ -4353,8 +4313,7 @@ int voc_disable_cvp(uint32_t session_id)
 
 		v->voc_state = VOC_CHANGE;
 	}
-	if (common.ec_ref_ext)
-		voc_set_ext_ec_ref(AFE_PORT_INVALID, false);
+
 fail:	mutex_unlock(&v->lock);
 
 	return ret;
@@ -4797,8 +4756,6 @@ int voc_end_voice_call(uint32_t session_id)
 
 		ret = -EINVAL;
 	}
-	if (common.ec_ref_ext)
-		voc_set_ext_ec_ref(AFE_PORT_INVALID, false);
 
 	mutex_unlock(&v->lock);
 	return ret;
@@ -5013,28 +4970,6 @@ int voc_start_voice_call(uint32_t session_id)
 	}
 fail:
 	mutex_unlock(&v->lock);
-	return ret;
-}
-
-int voc_set_ext_ec_ref(uint16_t port_id, bool state)
-{
-	int ret = 0;
-
-	mutex_lock(&common.common_lock);
-	if (state == true) {
-		if (port_id == AFE_PORT_INVALID) {
-			pr_err("%s: Invalid port id", __func__);
-			ret = -EINVAL;
-			goto exit;
-		}
-		common.ec_port_id = port_id;
-		common.ec_ref_ext = true;
-	} else {
-		common.ec_ref_ext = false;
-		common.ec_port_id = port_id;
-	}
-exit:
-	mutex_unlock(&common.common_lock);
 	return ret;
 }
 
@@ -5872,7 +5807,7 @@ static int __init voice_init(void)
 	common.default_vol_step_val = 0;
 	common.default_vol_ramp_duration_ms = DEFAULT_VOLUME_RAMP_DURATION;
 	common.default_mute_ramp_duration_ms = DEFAULT_MUTE_RAMP_DURATION;
-	common.ec_ref_ext = false;
+
 	/* Initialize MVS info. */
 	common.mvs_info.network_type = VSS_NETWORK_ID_DEFAULT;
 

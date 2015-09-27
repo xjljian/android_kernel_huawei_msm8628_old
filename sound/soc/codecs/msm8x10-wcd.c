@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -49,8 +49,6 @@
 #define NUM_INTERPOLATORS	3
 #define BITS_PER_REG		8
 #define MSM8X10_WCD_TX_PORT_NUMBER	4
-
-#define DAPM_MICBIAS_EXTERNAL_STANDALONE "MIC BIAS External Standalone"
 
 #define MSM8X10_WCD_I2S_MASTER_MODE_MASK	0x08
 #define MSM8X10_DINO_CODEC_BASE_ADDR		0xFE043000
@@ -178,6 +176,7 @@ struct msm8x10_wcd_priv {
 	/* mbhc module */
 	struct wcd9xxx_mbhc mbhc;
 
+	struct delayed_work hs_detect_work;
 	struct wcd9xxx_mbhc_config *mbhc_cfg;
 
 	/*
@@ -185,7 +184,6 @@ struct msm8x10_wcd_priv {
 	 * end of impedance measurement
 	 */
 	struct list_head reg_save_restore;
-	u32 micb_en_count;
 };
 
 static unsigned short rx_digital_gain_reg[] = {
@@ -298,6 +296,7 @@ static int msm8x10_wcd_i2c_write_device(u16 reg, u8 *value, u32 bytes)
 			return ret;
 		}
 	}
+	pr_debug("write sucess register = %x val = %x\n", reg, data[1]);
 	return 0;
 }
 
@@ -346,6 +345,7 @@ int msm8x10_wcd_i2c_read_device(u32 reg, u32 bytes, u8 *dest)
 			}
 		}
 	}
+	pr_debug("%s: reg 0x%x = 0x%x\n", __func__, reg, *dest);
 	return 0;
 }
 
@@ -451,8 +451,8 @@ static int __msm8x10_wcd_reg_write(struct msm8x10_wcd *msm8x10_wcd,
 				__func__, reg);
 	else
 		dev_dbg(msm8x10_wcd->dev,
-			"%s: Write 0x%x to 0x%x\n",
-			__func__, val, reg);
+			"%s: Write %x to R%d(0x%x)\n",
+			__func__, val, reg, reg);
 
 	return ret;
 }
@@ -488,6 +488,8 @@ static int msm8x10_wcd_volatile(struct snd_soc_codec *codec, unsigned int reg)
 	 * Registers lower than 0x100 are top level registers which can be
 	 * written by the Taiko core driver.
 	 */
+	dev_dbg(codec->dev, "%s: reg 0x%x\n", __func__, reg);
+
 	if ((reg >= MSM8X10_WCD_A_CDC_MBHC_EN_CTL) || (reg < 0x100))
 		return 1;
 
@@ -523,7 +525,7 @@ static int msm8x10_wcd_write(struct snd_soc_codec *codec, unsigned int reg,
 			     unsigned int value)
 {
 	int ret;
-	dev_dbg(codec->dev, "%s: Write to reg 0x%x\n", __func__, reg);
+	dev_dbg(codec->dev, "%s: Write from reg 0x%x\n", __func__, reg);
 	if (reg == SND_SOC_NOPM)
 		return 0;
 
@@ -1148,13 +1150,6 @@ static const struct snd_kcontrol_new msm8x10_wcd_snd_controls[] = {
 			  MSM8X10_WCD_A_CDC_TX2_VOL_CTL_GAIN,
 			  -84, 40, digital_gain),
 
-	SOC_SINGLE_TLV("ADC1 Volume", MSM8X10_WCD_A_TX_1_EN, 2,
-					19, 0, analog_gain),
-	SOC_SINGLE_TLV("ADC2 Volume", MSM8X10_WCD_A_TX_2_EN, 2,
-					19, 0, analog_gain),
-	SOC_SINGLE_TLV("ADC3 Volume", MSM8X10_WCD_A_TX_3_EN, 2,
-					19, 0, analog_gain),
-
 	SOC_SINGLE_S8_TLV("IIR1 INP1 Volume",
 			  MSM8X10_WCD_A_CDC_IIR1_GAIN_B1_CTL,
 			  -84, 40, digital_gain),
@@ -1276,10 +1271,6 @@ static const char * const rx_rdac4_text[] = {
 	"ZERO", "RX3", "RX2"
 };
 
-static const char * const rx_rdac3_text[] = {
-	"RX1", "RX2"
-};
-
 static const struct soc_enum rx_mix1_inp1_chain_enum =
 	SOC_ENUM_SINGLE(MSM8X10_WCD_A_CDC_CONN_RX1_B1_CTL, 0, 6, rx_mix1_text);
 
@@ -1321,10 +1312,6 @@ static const struct soc_enum rx_rdac4_enum  =
 	SOC_ENUM_SINGLE(MSM8X10_WCD_A_CDC_CONN_LO_DAC_CTL, 0, 3,
 	rx_rdac4_text);
 
-static const struct soc_enum rx_rdac3_enum  =
-	SOC_ENUM_SINGLE(MSM8X10_WCD_A_CDC_CONN_HPHR_DAC_CTL, 0, 2,
-	rx_rdac3_text);
-
 static const struct soc_enum adc2_enum =
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(adc2_mux_text), adc2_mux_text);
 
@@ -1357,9 +1344,6 @@ static const struct snd_kcontrol_new rx2_mix2_inp1_mux =
 
 static const struct snd_kcontrol_new rx_dac4_mux =
 	SOC_DAPM_ENUM("RDAC4 MUX Mux", rx_rdac4_enum);
-
-static const struct snd_kcontrol_new rx_dac3_mux =
-	SOC_DAPM_ENUM("RDAC3 MUX Mux", rx_rdac3_enum);
 
 static const struct snd_kcontrol_new tx_adc2_mux =
 	SOC_DAPM_ENUM("ADC2 MUX Mux", adc2_enum);
@@ -1412,10 +1396,7 @@ static int msm8x10_wcd_put_dec_enum(struct snd_kcontrol *kcontrol,
 	switch (decimator) {
 	case 1:
 	case 2:
-			if ((dec_mux == 3) || (dec_mux == 4))
-				adc_dmic_sel = 0x1;
-			else
-				adc_dmic_sel = 0x0;
+			adc_dmic_sel = 0x0;
 		break;
 	default:
 		dev_err(codec->dev, "%s: Invalid Decimator = %u\n",
@@ -1620,22 +1601,20 @@ static int msm8x10_wcd_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 	char *internal1_text = "Internal1";
 	char *internal2_text = "Internal2";
 	char *internal3_text = "Internal3";
-	char *external_text = "External";
 	enum wcd9xxx_notify_event e_post_off, e_pre_on, e_post_on;
 
 	dev_dbg(codec->dev, "%s %d\n", __func__, event);
-
-	if ((strnstr(w->name, internal1_text, 30)) ||
-	    (strnstr(w->name, internal2_text, 30)) ||
-	    (strnstr(w->name, internal3_text, 30)) ||
-	    (strnstr(w->name, external_text, 30))) {
+	switch (w->reg) {
+	case MSM8X10_WCD_A_MICB_1_CTL:
 		micb_int_reg = MSM8X10_WCD_A_MICB_1_INT_RBIAS;
 		e_pre_on = WCD9XXX_EVENT_PRE_MICBIAS_1_ON;
 		e_post_on = WCD9XXX_EVENT_POST_MICBIAS_1_ON;
 		e_post_off = WCD9XXX_EVENT_POST_MICBIAS_1_OFF;
-	} else {
+		break;
+	default:
 		dev_err(codec->dev,
-			"%s: Error, invalid micbias %s\n", __func__, w->name);
+			"%s: Error, invalid micbias register 0x%x\n",
+			__func__, w->reg);
 		return -EINVAL;
 	}
 
@@ -1653,11 +1632,6 @@ static int msm8x10_wcd_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 
 		/* Always pull up TxFe for TX2 to Micbias */
 		snd_soc_update_bits(codec, micb_int_reg, 0x04, 0x04);
-		if (++msm8x10_wcd->micb_en_count == 1)
-			snd_soc_update_bits(codec, MSM8X10_WCD_A_MICB_1_CTL,
-					0x80, 0x80);
-		pr_debug("%s micb_en_count : %d", __func__,
-				msm8x10_wcd->micb_en_count);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		usleep_range(20000, 20100);
@@ -1665,11 +1639,6 @@ static int msm8x10_wcd_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 		wcd9xxx_resmgr_notifier_call(&msm8x10_wcd->resmgr, e_post_on);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		if (--msm8x10_wcd->micb_en_count == 0)
-			snd_soc_update_bits(codec, MSM8X10_WCD_A_MICB_1_CTL,
-					0x80, 0x00);
-		pr_debug("%s micb_en_count : %d", __func__,
-				msm8x10_wcd->micb_en_count);
 		/* Let MBHC module know so micbias switch to be off */
 		wcd9xxx_resmgr_notifier_call(&msm8x10_wcd->resmgr, e_post_off);
 
@@ -2000,10 +1969,7 @@ static const struct snd_soc_dapm_route audio_map[] = {
 
 	{"DAC1", "Switch", "RX1 CHAIN"},
 	{"HPHL DAC", "Switch", "RX1 CHAIN"},
-	{"HPHR DAC", NULL, "RDAC3 MUX"},
-
-	{"RDAC3 MUX", "RX1", "RX1 CHAIN"},
-	{"RDAC3 MUX", "RX2", "RX2 CHAIN"},
+	{"HPHR DAC", NULL, "RX2 CHAIN"},
 
 	{"LINEOUT", NULL, "LINEOUT PA"},
 	{"SPK_OUT", NULL, "SPK PA"},
@@ -2331,8 +2297,7 @@ static const struct snd_soc_dapm_widget msm8x10_wcd_dapm_widgets[] = {
 	SND_SOC_DAPM_OUTPUT("EAR"),
 
 	SND_SOC_DAPM_PGA_E("EAR PA", MSM8X10_WCD_A_RX_EAR_EN, 4, 0, NULL, 0,
-			msm8x10_wcd_codec_enable_ear_pa,
-			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+			msm8x10_wcd_codec_enable_ear_pa, SND_SOC_DAPM_POST_PMU),
 
 	SND_SOC_DAPM_MIXER("DAC1", MSM8X10_WCD_A_RX_EAR_EN, 6, 0, dac1_switch,
 		ARRAY_SIZE(dac1_switch)),
@@ -2446,8 +2411,6 @@ static const struct snd_soc_dapm_widget msm8x10_wcd_dapm_widgets[] = {
 		&rx2_mix2_inp1_mux),
 	SND_SOC_DAPM_MUX("RDAC4 MUX", SND_SOC_NOPM, 0, 0,
 		&rx_dac4_mux),
-	SND_SOC_DAPM_MUX("RDAC3 MUX", SND_SOC_NOPM, 0, 0,
-		&rx_dac3_mux),
 
 	SND_SOC_DAPM_SUPPLY("MICBIAS_REGULATOR", SND_SOC_NOPM,
 		ON_DEMAND_MICBIAS, 0,
@@ -2477,26 +2440,21 @@ static const struct snd_soc_dapm_widget msm8x10_wcd_dapm_widgets[] = {
 
 	SND_SOC_DAPM_INPUT("AMIC1"),
 	SND_SOC_DAPM_MICBIAS_E("MIC BIAS Internal1",
-		SND_SOC_NOPM, 7, 0,
+		MSM8X10_WCD_A_MICB_1_CTL, 7, 0,
 		msm8x10_wcd_codec_enable_micbias, SND_SOC_DAPM_PRE_PMU |
 		SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_MICBIAS_E("MIC BIAS Internal2",
-		SND_SOC_NOPM, 7, 0,
+		MSM8X10_WCD_A_MICB_1_CTL, 7, 0,
 		msm8x10_wcd_codec_enable_micbias, SND_SOC_DAPM_PRE_PMU |
 		SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_MICBIAS_E("MIC BIAS Internal3",
-		SND_SOC_NOPM, 7, 0,
+		MSM8X10_WCD_A_MICB_1_CTL, 7, 0,
 		msm8x10_wcd_codec_enable_micbias, SND_SOC_DAPM_PRE_PMU |
 		SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_MICBIAS_E("MIC BIAS External",
-		SND_SOC_NOPM, 7, 0,
+		MSM8X10_WCD_A_MICB_1_CTL, 7, 0,
 		msm8x10_wcd_codec_enable_micbias, SND_SOC_DAPM_PRE_PMU |
 		SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_MICBIAS_E(DAPM_MICBIAS_EXTERNAL_STANDALONE,
-		SND_SOC_NOPM,
-		7, 0, msm8x10_wcd_codec_enable_micbias,
-		SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
-		SND_SOC_DAPM_POST_PMD),
 
 	SND_SOC_DAPM_ADC_E("ADC1", NULL, MSM8X10_WCD_A_TX_1_EN, 7, 0,
 		msm8x10_wcd_codec_enable_adc, SND_SOC_DAPM_PRE_PMU |
@@ -2585,6 +2543,8 @@ static const struct msm8x10_wcd_reg_mask_val msm8x10_wcd_reg_defaults[] = {
 	/* Disable internal biasing path which can cause leakage */
 	MSM8X10_WCD_REG_VAL(MSM8X10_WCD_A_BIAS_CURR_CTL_2, 0x04),
 
+	/* Enable pulldown to reduce leakage */
+	MSM8X10_WCD_REG_VAL(MSM8X10_WCD_A_MICB_1_CTL, 0x82),
 	MSM8X10_WCD_REG_VAL(MSM8X10_WCD_A_TX_COM_BIAS, 0xE0),
 	/* Keep the same default gain settings for TX paths */
 	MSM8X10_WCD_REG_VAL(MSM8X10_WCD_A_TX_1_EN, 0x32),
@@ -2622,8 +2582,6 @@ static const struct msm8x10_wcd_reg_mask_val
 	 */
 	{MSM8X10_WCD_A_RX_HPH_OCP_CTL, 0xE1, 0x61},
 	{MSM8X10_WCD_A_RX_COM_OCP_COUNT, 0xFF, 0xFF},
-	{MSM8X10_WCD_A_RX_HPH_L_TEST, 0x01, 0x01},
-	{MSM8X10_WCD_A_RX_HPH_R_TEST, 0x01, 0x01},
 
 	/* Initialize gain registers to use register gain */
 	{MSM8X10_WCD_A_RX_HPH_L_GAIN, 0x20, 0x20},
@@ -2744,29 +2702,6 @@ static int msm8x10_wcd_enable_ext_mb_source(struct snd_soc_codec *codec,
 			 __func__, turn_on ? "Enabled" : "Disabled");
 
 	return ret;
-}
-
-static int msm8x10_wcd_enable_mbhc_micbias(struct snd_soc_codec *codec,
-	 bool enable)
-{
-	int rc;
-
-	if (enable)
-		rc = snd_soc_dapm_force_enable_pin(&codec->dapm,
-			DAPM_MICBIAS_EXTERNAL_STANDALONE);
-	else {
-		rc = snd_soc_dapm_disable_pin(&codec->dapm,
-			DAPM_MICBIAS_EXTERNAL_STANDALONE);
-	}
-	snd_soc_dapm_sync(&codec->dapm);
-
-	if (rc)
-		pr_debug("%s: Failed to force %s micbias", __func__,
-			enable ? "enable" : "disable");
-	else
-		pr_debug("%s: Trying force %s micbias", __func__,
-			enable ? "enable" : "disable");
-	return rc;
 }
 
 static void msm8x10_wcd_micb_internal(struct snd_soc_codec *codec, bool on)
@@ -3019,18 +2954,33 @@ static const struct wcd9xxx_mbhc_cb mbhc_cb = {
 	.compute_impedance = msm8x10_wcd_compute_impedance,
 };
 
+static void delayed_hs_detect_fn(struct work_struct *work)
+{
+	struct delayed_work *delayed_work;
+	struct msm8x10_wcd_priv *wcd_priv;
+
+	delayed_work = to_delayed_work(work);
+	wcd_priv = container_of(delayed_work, struct msm8x10_wcd_priv,
+				hs_detect_work);
+
+	if (!wcd_priv) {
+		pr_err("%s: Invalid private data for codec\n", __func__);
+		return;
+	}
+
+	wcd9xxx_mbhc_start(&wcd_priv->mbhc, wcd_priv->mbhc_cfg);
+}
+
+
 int msm8x10_wcd_hs_detect(struct snd_soc_codec *codec,
 		    struct wcd9xxx_mbhc_config *mbhc_cfg)
 {
 	struct msm8x10_wcd_priv *wcd = snd_soc_codec_get_drvdata(codec);
 
-	if (!wcd) {
-		dev_err(codec->dev, "%s: Invalid private data for codec\n",
-			__func__);
-		return -EINVAL;
-	}
 	wcd->mbhc_cfg = mbhc_cfg;
-	return wcd9xxx_mbhc_start(&wcd->mbhc, wcd->mbhc_cfg);
+	schedule_delayed_work(&wcd->hs_detect_work,
+			msecs_to_jiffies(5000));
+	return 0;
 }
 EXPORT_SYMBOL_GPL(msm8x10_wcd_hs_detect);
 
@@ -3197,6 +3147,8 @@ static int msm8x10_wcd_codec_probe(struct snd_soc_codec *codec)
 	msm8x10_wcd = codec->control_data;
 	msm8x10_wcd->pdino_base = ioremap(MSM8X10_DINO_CODEC_BASE_ADDR,
 					  MSM8X10_DINO_CODEC_REG_SIZE);
+	INIT_DELAYED_WORK(&msm8x10_wcd_priv->hs_detect_work,
+			delayed_hs_detect_fn);
 
 	pdata = dev_get_platdata(msm8x10_wcd->dev);
 	if (!pdata) {
@@ -3232,12 +3184,9 @@ static int msm8x10_wcd_codec_probe(struct snd_soc_codec *codec)
 				on_demand_supply_name[ON_DEMAND_MICBIAS]);
 	atomic_set(&msm8x10_wcd_priv->on_demand_list[ON_DEMAND_MICBIAS].ref, 0);
 
-	msm8x10_wcd_priv->micb_en_count = 0;
-
 	ret = wcd9xxx_mbhc_init(&msm8x10_wcd_priv->mbhc,
 				&msm8x10_wcd_priv->resmgr,
-				codec, msm8x10_wcd_enable_mbhc_micbias,
-				&mbhc_cb, &cdc_intr_ids,
+				codec, NULL, &mbhc_cb, &cdc_intr_ids,
 				HELICON_MCLK_CLK_9P6MHZ, true);
 	if (ret) {
 		dev_err(msm8x10_wcd->dev, "%s: Failed to initialize mbhc\n",

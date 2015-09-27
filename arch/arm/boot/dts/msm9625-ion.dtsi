@@ -16,9 +16,12 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		qcom,ion-heap@25 {
+		qcom,ion-heap@30 { /* SYSTEM HEAP */
+			reg = <30>;
+		};
+
+		qcom,ion-heap@25 { /* IOMMU HEAP */
 			reg = <25>;
-			qcom,ion-heap-type = "SYSTEM";
 		};
 
 		qcom,ion-heap@28 { /* AUDIO HEAP */
@@ -27,7 +30,6 @@
 			qcom,heap-align = <0x1000>;
 			qcom,memory-reservation-type = "EBI1"; /* reserve EBI memory */
 			qcom,memory-reservation-size = <0xAF000>;
-			qcom,ion-heap-type = "CARVEOUT";
 		};
 	};
 };

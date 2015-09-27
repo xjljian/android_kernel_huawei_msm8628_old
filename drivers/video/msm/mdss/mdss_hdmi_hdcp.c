@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2014 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2013 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -30,8 +30,6 @@
 #define HDCP_KEYS_STATE_CHKSUM_MISMATCH	5
 #define HDCP_KEYS_STATE_PROD_AKSV	6
 #define HDCP_KEYS_STATE_RESERVED	7
-
-#define HDCP_INT_CLR (BIT(1) | BIT(5) | BIT(7) | BIT(9) | BIT(13))
 
 struct hdmi_hdcp_ctrl {
 	u32 auth_retries;
@@ -520,7 +518,7 @@ static int hdmi_hdcp_authentication_part1(struct hdmi_hdcp_ctrl *hdcp_ctrl)
 	/* Write R0' to HDCP registers and check to see if it is a match */
 	INIT_COMPLETION(hdcp_ctrl->r0_checked);
 	DSS_REG_W(io, HDMI_HDCP_RCVPORT_DATA2_0, (((u32)buf[1]) << 8) | buf[0]);
-	timeout_count = wait_for_completion_timeout(
+	timeout_count = wait_for_completion_interruptible_timeout(
 		&hdcp_ctrl->r0_checked, HZ*2);
 	link0_status = DSS_REG_R(io, HDMI_HDCP_LINK0_STATUS);
 	is_match = link0_status & BIT(12);
@@ -1050,10 +1048,7 @@ static int hdmi_msm_if_abort_reauth(struct hdmi_hdcp_ctrl *hdcp_ctrl)
 	}
 
 	if (++hdcp_ctrl->auth_retries == AUTH_RETRIES_TIME) {
-		mutex_lock(hdcp_ctrl->init_data.mutex);
-		hdcp_ctrl->hdcp_state = HDCP_STATE_INACTIVE;
-		mutex_unlock(hdcp_ctrl->init_data.mutex);
-
+		hdmi_hdcp_off(hdcp_ctrl);
 		hdcp_ctrl->auth_retries = 0;
 		ret = -ERANGE;
 	}
@@ -1080,6 +1075,13 @@ int hdmi_hdcp_reauthenticate(void *input)
 		return 0;
 	}
 
+	ret = hdmi_msm_if_abort_reauth(hdcp_ctrl);
+
+	if (ret) {
+		DEV_ERR("%s: abort reauthentication!\n", __func__);
+		return ret;
+	}
+
 	/*
 	 * Disable HPD circuitry.
 	 * This is needed to reset the HDCP cipher engine so that when we
@@ -1104,13 +1106,6 @@ int hdmi_hdcp_reauthenticate(void *input)
 	DSS_REG_W(hdcp_ctrl->init_data.core_io, HDMI_HPD_CTRL,
 		DSS_REG_R(hdcp_ctrl->init_data.core_io,
 		HDMI_HPD_CTRL) | BIT(28));
-
-	ret = hdmi_msm_if_abort_reauth(hdcp_ctrl);
-
-	if (ret) {
-		DEV_ERR("%s: abort reauthentication!\n", __func__);
-		return ret;
-	}
 
 	/* Restart authentication attempt */
 	DEV_DBG("%s: %s: Scheduling work to start HDCP authentication",
@@ -1144,14 +1139,15 @@ void hdmi_hdcp_off(void *input)
 	}
 
 	/*
-	 * Disable HDCP interrupts.
-	 * Also, need to set the state to inactive here so that any ongoing
-	 * reauth works will know that the HDCP session has been turned off.
+	 * Need to set the state to inactive here so that any ongoing
+	 * reauth works will know that the HDCP session has been turned off
 	 */
 	mutex_lock(hdcp_ctrl->init_data.mutex);
-	DSS_REG_W(io, HDMI_HDCP_INT_CTRL, 0);
 	hdcp_ctrl->hdcp_state = HDCP_STATE_INACTIVE;
 	mutex_unlock(hdcp_ctrl->init_data.mutex);
+
+	/* Disable HDCP interrupts */
+	DSS_REG_W(io, HDMI_HDCP_INT_CTRL, 0);
 
 	/*
 	 * Cancel any pending auth/reauth attempts.
@@ -1197,7 +1193,7 @@ int hdmi_hdcp_isr(void *input)
 	if (HDCP_STATE_INACTIVE == hdcp_ctrl->hdcp_state) {
 		DEV_ERR("%s: HDCP inactive. Just clear int and return.\n",
 			__func__);
-		DSS_REG_W(io, HDMI_HDCP_INT_CTRL, HDCP_INT_CLR);
+		DSS_REG_W(io, HDMI_HDCP_INT_CTRL, hdcp_int_val);
 		return 0;
 	}
 
