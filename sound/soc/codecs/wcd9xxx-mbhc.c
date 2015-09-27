@@ -3096,6 +3096,17 @@ static void wcd9xxx_get_z(struct wcd9xxx_mbhc *mbhc, s16 *dce_z, s16 *sta_z)
 		*dce_z = wcd9xxx_codec_sta_dce(mbhc, 1, false);
 		pr_debug("%s: dce_z 0x%x\n", __func__, *dce_z & 0xFFFF);
 	}
+	/* Verify address validity, before print log */
+	if (sta_z)
+	{
+		*sta_z = wcd9xxx_codec_sta_dce(mbhc, 0, false);
+		pr_debug("%s: sta_z 0x%x\n", __func__, *sta_z & 0xFFFF);
+	}
+	if (dce_z)
+	{
+		*dce_z = wcd9xxx_codec_sta_dce(mbhc, 1, false);
+		pr_debug("%s: dce_z 0x%x\n", __func__, *dce_z & 0xFFFF);
+	}
 
 	/* Connect override from micbias */
 	if (change)
