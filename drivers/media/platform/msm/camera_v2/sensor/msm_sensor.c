@@ -19,6 +19,9 @@
 #include <mach/rpm-regulator.h>
 #include <mach/rpm-regulator-smd.h>
 #include <linux/regulator/consumer.h>
+#ifdef CONFIG_HUAWEI_HW_DEV_DCT
+#include <linux/hw_dev_dec.h>
+#endif
 
 #undef CDBG
 #ifdef CONFIG_MSMB_CAMERA_DEBUG
@@ -27,6 +30,10 @@
 #define CDBG(fmt, args...) do { } while (0)
 #endif
 
+#ifdef CONFIG_HUAWEI_KERNEL_CAMERA
+static int32_t msm_sensor_get_dt_actuator_data(struct device_node *of_node,
+	struct  msm_camera_sensor_board_info *sensordata);
+#endif
 static int32_t msm_sensor_enable_i2c_mux(struct msm_camera_i2c_conf *i2c_conf)
 {
 	struct v4l2_subdev *i2c_mux_sd =
@@ -77,6 +84,13 @@ static int32_t msm_sensor_get_sub_module_index(struct device_node *of_node,
 		}
 		sensordata->sensor_info->
 			subdev_id[SUB_MODULE_ACTUATOR] = val;
+#ifdef CONFIG_HUAWEI_KERNEL_CAMERA
+		//get actuator config from dtsi file
+		rc = msm_sensor_get_dt_actuator_data(src_node, sensordata);
+		if (rc < 0) {
+			pr_err("%s failed %d\n", __func__, __LINE__);
+		}
+#endif
 		of_node_put(src_node);
 		src_node = NULL;
 	}
@@ -566,8 +580,13 @@ int32_t msm_sensor_init_gpio_pin_tbl(struct device_node *of_node,
 		}
 		gconf->gpio_num_info->gpio_num[SENSOR_GPIO_STANDBY] =
 			gpio_array[val];
+#ifdef CONFIG_HUAWEI_KERNEL_CAMERA
+		CDBG("%s qcom,gpio-standby %d\n", __func__,
+			gconf->gpio_num_info->gpio_num[SENSOR_GPIO_STANDBY]);
+#else
 		CDBG("%s qcom,gpio-reset %d\n", __func__,
 			gconf->gpio_num_info->gpio_num[SENSOR_GPIO_STANDBY]);
+#endif
 	}
 
 	rc = of_property_read_u32(of_node, "qcom,gpio-vio", &val);
@@ -836,12 +855,17 @@ static int32_t msm_sensor_get_dt_data(struct device_node *of_node,
 			goto ERROR6;
 		}
 	}
+	/*
+	delete msm_sensor_get_dt_actuator_data() in here, 
+	because the of_node is incorrect.
+	*/
+#ifndef CONFIG_HUAWEI_KERNEL_CAMERA
 	rc = msm_sensor_get_dt_actuator_data(of_node, sensordata);
 	if (rc < 0) {
 		pr_err("%s failed %d\n", __func__, __LINE__);
 		goto ERROR7;
 	}
-
+#endif
 	sensordata->slave_info = kzalloc(sizeof(struct msm_camera_slave_info),
 		GFP_KERNEL);
 	if (!sensordata->slave_info) {
@@ -875,7 +899,10 @@ ERROR9:
 	kfree(s_ctrl->sensordata->slave_info);
 ERROR8:
 	kfree(s_ctrl->sensordata->actuator_info);
+//don't use the lable, delete it.
+#ifndef CONFIG_HUAWEI_KERNEL_CAMERA
 ERROR7:
+#endif
 	kfree(s_ctrl->sensordata->gpio_conf->gpio_num_info);
 ERROR6:
 	kfree(s_ctrl->sensordata->gpio_conf->cam_gpio_set_tbl);
@@ -956,10 +983,17 @@ static struct msm_cam_clk_info cam_8610_clk_info[] = {
 	[SENSOR_CAM_CLK] = {"cam_clk", 0},
 };
 
+#ifdef CONFIG_HUAWEI_KERNEL_CAMERA
+static struct msm_cam_clk_info cam_8226_clk_info[] = {
+	[SENSOR_CAM_MCLK] = {"cam_src_clk", 24000000},
+	[SENSOR_CAM_CLK] = {"cam_clk", 0},
+};
+#else
 static struct msm_cam_clk_info cam_8974_clk_info[] = {
 	[SENSOR_CAM_MCLK] = {"cam_src_clk", 24000000},
 	[SENSOR_CAM_CLK] = {"cam_clk", 0},
 };
+#endif
 
 int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 {
@@ -1076,7 +1110,13 @@ int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 		pr_err("%s:%d match id failed rc %d\n", __func__, __LINE__, rc);
 		goto power_up_failed;
 	}
-
+#ifdef CONFIG_HUAWEI_KERNEL_CAMERA
+	if (s_ctrl->func_tbl->sensor_match_module)
+		rc = s_ctrl->func_tbl->sensor_match_module(s_ctrl);
+    if (rc < 0) {
+        pr_err("%s:%d match module failed rc %d\n", __func__, __LINE__, rc);
+    }
+#endif
 	CDBG("%s exit\n", __func__);
 	return 0;
 power_up_failed:
@@ -1707,6 +1747,28 @@ int32_t msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 		}
 		break;
 	}
+#ifdef CONFIG_HUAWEI_KERNEL_CAMERA
+    case CFG_GET_SENSOR_PROJECT_INFO:
+        memcpy(cdata->cfg.sensor_info.sensor_project_name,
+               s_ctrl->sensordata->sensor_info->sensor_project_name,
+               sizeof(cdata->cfg.sensor_info.sensor_project_name));
+
+        CDBG("%s, %d: sensor project name %s\n", __func__, __LINE__,
+             cdata->cfg.sensor_info.sensor_project_name);
+
+    break;
+	case CFG_WRITE_OTP_DATA:
+		if (s_ctrl->func_tbl->sensor_write_otp)
+		{
+			rc = s_ctrl->func_tbl->sensor_write_otp(s_ctrl);
+			if(!rc)
+			{
+				cdata->cfg.sensor_info.sensor_otp_dig_gain =
+				  s_ctrl->sensordata->sensor_info->sensor_otp_dig_gain;
+			}
+		}
+	break;
+#endif
 	default:
 		rc = -EFAULT;
 		break;
@@ -1830,6 +1892,18 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev, void *data)
 			&msm_sensor_cci_func_tbl;
 	if (!s_ctrl->sensor_v4l2_subdev_ops)
 		s_ctrl->sensor_v4l2_subdev_ops = &msm_sensor_subdev_ops;
+
+#ifdef CONFIG_HUAWEI_KERNEL_CAMERA
+	s_ctrl->clk_info = kzalloc(sizeof(cam_8226_clk_info),
+		GFP_KERNEL);
+	if (!s_ctrl->clk_info) {
+		pr_err("%s:%d failed nomem\n", __func__, __LINE__);
+		kfree(cci_client);
+		return -ENOMEM;
+	}
+	memcpy(s_ctrl->clk_info, cam_8226_clk_info, sizeof(cam_8226_clk_info));
+	s_ctrl->clk_info_size = ARRAY_SIZE(cam_8226_clk_info);
+#else
 	s_ctrl->clk_info = kzalloc(sizeof(cam_8974_clk_info),
 		GFP_KERNEL);
 	if (!s_ctrl->clk_info) {
@@ -1839,6 +1913,8 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev, void *data)
 	}
 	memcpy(s_ctrl->clk_info, cam_8974_clk_info, sizeof(cam_8974_clk_info));
 	s_ctrl->clk_info_size = ARRAY_SIZE(cam_8974_clk_info);
+#endif
+
 	rc = s_ctrl->func_tbl->sensor_power_up(s_ctrl);
 	if (rc < 0) {
 		pr_err("%s %s power up failed\n", __func__,
@@ -1869,6 +1945,24 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev, void *data)
 	s_ctrl->msm_sd.close_seq = MSM_SD_CLOSE_2ND_CATEGORY | 0x3;
 	msm_sd_register(&s_ctrl->msm_sd);
 	CDBG("%s:%d\n", __func__, __LINE__);
+	
+#ifdef CONFIG_HUAWEI_HW_DEV_DCT
+	/* detect current device successful, set the flag as present */
+	switch(s_ctrl->sensordata->sensor_init_params->position)
+	{
+		case BACK_CAMERA_B:
+			set_hw_dev_flag(DEV_I2C_CAMERA_MAIN);
+			printk("%s: %s set_hw_dev_flag success!! \n",__func__,s_ctrl->sensordata->sensor_name);
+			break;
+		case FRONT_CAMERA_B:
+			set_hw_dev_flag(DEV_I2C_CAMERA_SLAVE);
+			printk("%s: %s set_hw_dev_flag success!! \n",__func__,s_ctrl->sensordata->sensor_name);
+			break;
+		default:
+			printk("%s: %s set_hw_dev_flag fail!! \n",__func__,s_ctrl->sensordata->sensor_name);
+			break;
+	}
+#endif
 
 	s_ctrl->func_tbl->sensor_power_down(s_ctrl);
 	CDBG("%s:%d\n", __func__, __LINE__);

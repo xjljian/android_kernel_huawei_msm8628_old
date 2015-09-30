@@ -26,6 +26,11 @@
 #include "mdss.h"
 #include "mdss_dsi.h"
 #include "mdss_panel.h"
+#include "mdss_mdp.h"
+
+#ifdef CONFIG_HUAWEI_KERNEL
+int mdss_dsi_set_fps_flag = false;//use for mdss_dsi_isr. means the isr is for change fps
+#endif
 
 #define VSYNC_PERIOD 17
 
@@ -122,7 +127,36 @@ void mdss_dsi_clk_req(struct mdss_dsi_ctrl_pdata *ctrl, int enable)
 		mutex_unlock(&ctrl->cmd_mutex);
 	}
 
+	if (enable)
+		mdss_enable_mdp_clk(ctrl->dsi_hw);
+
 	mdss_dsi_clk_ctrl(ctrl, enable);
+	if (!enable)
+		mdss_disable_mdp_clk(ctrl->dsi_hw);
+}
+
+void mdss_dsi_enable_mdp_clk(struct mdss_dsi_ctrl_pdata *ctrl, u32 term)
+{
+	if (ctrl->dsi_mdp_clk_mask & term)
+		return;
+	if (ctrl->dsi_mdp_clk_mask == 0) {
+		mdss_enable_mdp_clk(ctrl->dsi_hw);
+		pr_debug("%s: CLK Enable, ndx=%d mask=%x term=%x\n", __func__,
+			ctrl->ndx, (int)ctrl->dsi_mdp_clk_mask, (int)term);
+		}
+	ctrl->dsi_mdp_clk_mask |= term;
+}
+
+void mdss_dsi_disable_mdp_clk(struct mdss_dsi_ctrl_pdata *ctrl, u32 term)
+{
+	if (!(ctrl->dsi_mdp_clk_mask & term))
+		return;
+	ctrl->dsi_mdp_clk_mask &= ~term;
+	if (ctrl->dsi_mdp_clk_mask == 0) {
+		mdss_disable_mdp_clk(ctrl->dsi_hw);
+		pr_debug("%s: CLK Disable, ndx=%d mask=%x term=%x\n", __func__,
+			ctrl->ndx, (int)ctrl->dsi_mdp_clk_mask, (int)term);
+	}
 }
 
 void mdss_dsi_pll_relock(struct mdss_dsi_ctrl_pdata *ctrl)
@@ -1410,8 +1444,12 @@ int mdss_dsi_cmds_rx(struct mdss_dsi_ctrl_pdata *ctrl,
 		data = dsi_ctrl | 0x04; /* CMD_MODE_EN */
 		MIPI_OUTP((ctrl->ctrl_base) + 0x0004, data);
 	}
-
+/*fix qcom bug*/
+#ifdef CONFIG_HUAWEI_KERNEL
+	if (rlen <= 2) {
+#else		
 	if (rlen == 0) {
+#endif	
 		short_response = 1;
 		rx_byte = 4;
 	} else {
@@ -1664,6 +1702,45 @@ void mdss_dsi_wait4video_done(struct mdss_dsi_ctrl_pdata *ctrl)
 	MIPI_OUTP((ctrl->ctrl_base) + 0x0110, data);
 }
 
+#ifdef CONFIG_HUAWEI_KERNEL
+//add ret base mdss_dsi_wait4video_done
+int mdss_dsi_wait4video_done_ret(struct mdss_dsi_ctrl_pdata *ctrl)
+{
+	unsigned long flag = 0;
+	u32 data = 0;
+    int ret = 0;
+    mdss_dsi_set_fps_flag = true;
+  	/* enable mdp clk. qualcomm add patch close the clk, need enable it when need. */
+	mdss_enable_mdp_clk(ctrl->dsi_hw);
+
+	/* DSI_INTL_CTRL */
+	data = MIPI_INP((ctrl->ctrl_base) + 0x0110);
+    if(!(data |DSI_INTR_VIDEO_DONE))
+    {
+        pr_debug("%s: dsi intl ctrl error. data=%x", __func__, data);
+    }
+	data |= DSI_INTR_VIDEO_DONE_MASK;
+	MIPI_OUTP((ctrl->ctrl_base) + 0x0110, data);
+
+	spin_lock_irqsave(&ctrl->mdp_lock, flag);
+	INIT_COMPLETION(ctrl->video_comp);
+	mdss_dsi_enable_irq(ctrl, DSI_VIDEO_TERM);
+	spin_unlock_irqrestore(&ctrl->mdp_lock, flag);
+
+	ret = wait_for_completion_timeout(&ctrl->video_comp,
+			msecs_to_jiffies(VSYNC_PERIOD * 4));
+
+	data = MIPI_INP((ctrl->ctrl_base) + 0x0110);
+	data &= ~DSI_INTR_VIDEO_DONE_MASK;
+	MIPI_OUTP((ctrl->ctrl_base) + 0x0110, data);
+
+	/* disable mdp clk */
+	mdss_disable_mdp_clk(ctrl->dsi_hw);
+    mdss_dsi_set_fps_flag = false;
+	return ret;
+}
+#endif  //CONFIG_HUAWEI_KERNEL
+
 static int mdss_dsi_wait4video_eng_busy(struct mdss_dsi_ctrl_pdata *ctrl)
 {
 	int ret = 0;
@@ -1768,6 +1845,8 @@ void mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 	mdss_bus_bandwidth_ctrl(1);
 
 	pr_debug("%s:  from_mdp=%d pid=%d\n", __func__, from_mdp, current->pid);
+	/* enable mdp clk */
+	mdss_enable_mdp_clk(ctrl->dsi_hw);
 	mdss_dsi_clk_ctrl(ctrl, 1);
 
 	if (req->flags & CMD_REQ_RX)
@@ -1777,6 +1856,9 @@ void mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 
 	mdss_dsi_clk_ctrl(ctrl, 0);
 	mdss_bus_bandwidth_ctrl(0);
+
+	/* disable mdp clk */
+	mdss_disable_mdp_clk(ctrl->dsi_hw);
 
 need_lock:
 
@@ -2059,6 +2141,12 @@ irqreturn_t mdss_dsi_isr(int irq, void *ptr)
 	if (isr & DSI_INTR_VIDEO_DONE) {
 		spin_lock(&ctrl->mdp_lock);
 		mdss_dsi_disable_irq_nosync(ctrl, DSI_VIDEO_TERM);
+#ifdef CONFIG_HUAWEI_KERNEL
+    if(mdss_dsi_set_fps_flag)
+    {
+         mdss_change_fps();
+    }        
+#endif
 		complete(&ctrl->video_comp);
 		spin_unlock(&ctrl->mdp_lock);
 	}

@@ -14,6 +14,8 @@
 #include "msm_isp_util.h"
 #include "msm_isp_axi_util.h"
 
+#define VFE_IMMEDIATE_STOP_SUPPORT
+
 #define SRC_TO_INTF(src) \
 	((src < RDI_INTF_0) ? VFE_PIX_0 : \
 	(VFE_RAW_0 + src - RDI_INTF_0))
@@ -840,22 +842,35 @@ static void msm_isp_process_done_buf(struct vfe_device *vfe_dev,
 
 static enum msm_isp_camif_update_state
 	msm_isp_get_camif_update_state(struct vfe_device *vfe_dev,
-	struct msm_vfe_axi_stream_cfg_cmd *stream_cfg_cmd)
+	struct msm_vfe_axi_stream_cfg_cmd *stream_cfg_cmd,
+	uint32_t *tot_stream_cnt)
 {
 	int i;
 	struct msm_vfe_axi_stream *stream_info;
 	struct msm_vfe_axi_shared_data *axi_data = &vfe_dev->axi_data;
-	uint8_t pix_stream_cnt = 0, cur_pix_stream_cnt;
+	uint32_t pix_stream_cnt = 0, cur_pix_stream_cnt;
+	uint32_t tot_strm;
+
 	cur_pix_stream_cnt =
 		axi_data->src_info[VFE_PIX_0].pix_stream_count +
 		axi_data->src_info[VFE_PIX_0].raw_stream_count;
+
+	 tot_strm = cur_pix_stream_cnt;
+
 	for (i = 0; i < stream_cfg_cmd->num_streams; i++) {
+		if (stream_cfg_cmd->cmd == STOP_STREAM)
+			tot_strm--;
+		else
+			tot_strm++;
+
 		stream_info =
 			&axi_data->stream_info[
 			HANDLE_TO_IDX(stream_cfg_cmd->stream_handle[i])];
 		if (stream_info->stream_src  < RDI_INTF_0)
 			pix_stream_cnt++;
 	}
+
+	*tot_stream_cnt = tot_strm;
 
 	if (pix_stream_cnt) {
 		if (cur_pix_stream_cnt == 0 && pix_stream_cnt &&
@@ -891,9 +906,10 @@ static void msm_isp_update_camif_output_count(
 			HANDLE_TO_IDX(stream_cfg_cmd->stream_handle[i])];
 		if (stream_info->stream_src >= RDI_INTF_0)
 			continue;
-		if (stream_info->stream_src == PIX_ENCODER ||
-			stream_info->stream_src == PIX_VIEWFINDER ||
-			stream_info->stream_src == IDEAL_RAW) {
+		if ((stream_info->stream_src == PIX_ENCODER) ||
+			(stream_info->stream_src == PIX_VIEWFINDER) ||
+			(stream_info->stream_src == IDEAL_RAW)) {
+
 			if (stream_cfg_cmd->cmd == START_STREAM)
 				vfe_dev->axi_data.src_info[VFE_PIX_0].
 					pix_stream_count++;
@@ -977,6 +993,23 @@ static int msm_isp_update_stream_bandwidth(struct vfe_device *vfe_dev)
 
 	return rc;
 }
+
+#ifdef VFE_IMMEDIATE_STOP_SUPPORT
+static int msm_isp_axi_wait_for_immediate_stop(struct vfe_device *vfe_dev,
+			enum msm_isp_camif_update_state camif_update)
+{
+	long rc;
+	vfe_dev->hw_info->vfe_ops.core_ops.
+		update_camif_state(vfe_dev, DISABLE_CAMIF_IMMEDIATELY);
+	rc = vfe_dev->hw_info->vfe_ops.axi_ops.halt(vfe_dev);
+	if (rc <= 0)
+		pr_err("%s: halt timeout\n", __func__);
+	rc = vfe_dev->hw_info->vfe_ops.core_ops.reset_hw(vfe_dev, ISP_RST_SOFT);
+	if (rc <= 0)
+		pr_err("%s: reset timeout\n", __func__);
+	return (int)rc;
+}
+#endif /* VFE_IMMEDIATE_STOP_SUPPORT */
 
 static int msm_isp_axi_wait_for_cfg_done(struct vfe_device *vfe_dev,
 	enum msm_isp_camif_update_state camif_update)
@@ -1121,7 +1154,8 @@ static int msm_isp_start_axi_stream(struct vfe_device *vfe_dev,
 
 static int msm_isp_stop_axi_stream(struct vfe_device *vfe_dev,
 			struct msm_vfe_axi_stream_cfg_cmd *stream_cfg_cmd,
-			enum msm_isp_camif_update_state camif_update)
+			 enum msm_isp_camif_update_state camif_update,
+			uint32_t active_streams)
 {
 	int i, rc = 0;
 	uint8_t wait_for_complete = 0;
@@ -1156,20 +1190,51 @@ static int msm_isp_stop_axi_stream(struct vfe_device *vfe_dev,
 			msm_isp_axi_stream_enable_cfg(vfe_dev, stream_info);
 			stream_info->state = INACTIVE;
 		} else {
+#ifdef VFE_IMMEDIATE_STOP_SUPPORT
+			if (active_streams == 0)
+				stream_info->state = INACTIVE;
+#endif /* VFE_IMMEDIATE_STOP_SUPPORT */
 			wait_for_complete = 1;
 		}
 	}
 	if (wait_for_complete) {
-		rc = msm_isp_axi_wait_for_cfg_done(vfe_dev, camif_update);
-		if (rc < 0) {
-			pr_err("%s: wait for config done failed\n", __func__);
-			return rc;
+#ifdef VFE_IMMEDIATE_STOP_SUPPORT
+		if (active_streams == 0) {
+			ISP_DBG("%s: wait for immediate stop\n", __func__);
+			rc = msm_isp_axi_wait_for_immediate_stop(vfe_dev,
+				camif_update);
+			if (rc < 0) {
+				pr_err("%s: wait for config done failed\n",
+					__func__);
+				return rc;
+			}
+		} else {
+#endif /* VFE_IMMEDIATE_STOP_SUPPORT */
+			ISP_DBG("%s: wait for stop\n", __func__);
+			rc = msm_isp_axi_wait_for_cfg_done(vfe_dev,
+				camif_update);
+			if (rc < 0) {
+				pr_err("%s: wait for config done failed\n",
+					__func__);
+				return rc;
+				}
+			if (camif_update == DISABLE_CAMIF) {
+				vfe_dev->hw_info->vfe_ops.core_ops.
+					update_camif_state(vfe_dev,
+					DISABLE_CAMIF);
+			}
+#ifdef VFE_IMMEDIATE_STOP_SUPPORT
+		}
+#endif /* VFE_IMMEDIATE_STOP_SUPPORT */
+		ISP_DBG("%s: Stop done end\n", __func__);
+	} else {
+		ISP_DBG("%s: Stopped without wait\n", __func__);
+		if (camif_update == DISABLE_CAMIF) {
+			vfe_dev->hw_info->vfe_ops.core_ops.
+				update_camif_state(vfe_dev, DISABLE_CAMIF);
 		}
 	}
 	msm_isp_update_stream_bandwidth(vfe_dev);
-	if (camif_update == DISABLE_CAMIF)
-		vfe_dev->hw_info->vfe_ops.core_ops.
-			update_camif_state(vfe_dev, DISABLE_CAMIF);
 	msm_isp_update_camif_output_count(vfe_dev, stream_cfg_cmd);
 
 	for (i = 0; i < stream_cfg_cmd->num_streams; i++) {
@@ -1187,7 +1252,7 @@ int msm_isp_cfg_axi_stream(struct vfe_device *vfe_dev, void *arg)
 	struct msm_vfe_axi_stream_cfg_cmd *stream_cfg_cmd = arg;
 	struct msm_vfe_axi_shared_data *axi_data = &vfe_dev->axi_data;
 	enum msm_isp_camif_update_state camif_update;
-
+	uint32_t active_streams;
 	rc = msm_isp_axi_check_stream_state(vfe_dev, stream_cfg_cmd);
 	if (rc < 0) {
 		pr_err("%s: Invalid stream state\n", __func__);
@@ -1198,14 +1263,16 @@ int msm_isp_cfg_axi_stream(struct vfe_device *vfe_dev, void *arg)
 		/*Configure UB*/
 		vfe_dev->hw_info->vfe_ops.axi_ops.cfg_ub(vfe_dev);
 	}
-	camif_update = msm_isp_get_camif_update_state(vfe_dev, stream_cfg_cmd);
+
+	camif_update = msm_isp_get_camif_update_state(vfe_dev, stream_cfg_cmd,
+		&active_streams);
 
 	if (stream_cfg_cmd->cmd == START_STREAM)
 		rc = msm_isp_start_axi_stream(
 		   vfe_dev, stream_cfg_cmd, camif_update);
 	else
 		rc = msm_isp_stop_axi_stream(
-		   vfe_dev, stream_cfg_cmd, camif_update);
+		    vfe_dev, stream_cfg_cmd, camif_update,active_streams);
 
 	if (rc < 0)
 		pr_err("%s: start/stop stream failed\n", __func__);

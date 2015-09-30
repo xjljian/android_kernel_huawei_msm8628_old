@@ -19,3 +19,8 @@ obj-$(CONFIG_OV5648) += ov5648.o
 obj-$(CONFIG_MT9M114) += mt9m114.o
 obj-$(CONFIG_SP1628) += sp1628.o
 obj-$(CONFIG_GC0339) += gc0339.o
+obj-$(CONFIG_HW_IMX135) += hw_imx135.o
+obj-$(CONFIG_HW_S5K4E1) += hw_s5k4e1.o
+obj-$(CONFIG_HW_OV5648) += hw_ov5648.o
+obj-$(CONFIG_HW_HI542) += hw_hi542.o
+

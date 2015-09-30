@@ -27,7 +27,13 @@
 #include <linux/qpnp/qpnp-adc.h>
 #include <linux/qpnp/power-on.h>
 #include <linux/of_batterydata.h>
+//remove huawei battery id solution
 
+#ifdef CONFIG_HUAWEI_KERNEL
+#include <linux/time.h>
+extern int is_usb_chg_exist(void);
+extern int is_otg_host_mode(void);
+#endif
 /* BMS Register Offsets */
 #define REVISION1			0x0
 #define REVISION2			0x1
@@ -93,6 +99,16 @@
 #define CHGCYL_RESOLUTION			20
 #define FCC_DEFAULT_TEMP			250
 
+#define CUTOFF_BATTERY_LEVEL 2
+#define VOLTAGE_CONFIRM_MAX_COUNTER    4
+#define CUTOFF_VOLTAGE_UV 3400000
+#ifdef CONFIG_HUAWEI_KERNEL
+#define CUTOFF_VOLTAGE_DELTA_UV		50000
+#define OCV_VBAT_MAX_DELTA_UV		200000
+#define ZERO_SOC 0
+#define FAKE_ZERO_SOC 1 //avoid immediate poweroff
+#define DEFAULT_WARM_RESET_VALID_LIMIT	50
+#endif
 #define QPNP_BMS_DEV_NAME "qcom,qpnp-bms"
 
 enum {
@@ -285,6 +301,12 @@ struct qpnp_bms_chip {
 	struct qpnp_vadc_chip		*vadc_dev;
 	struct qpnp_iadc_chip		*iadc_dev;
 	struct qpnp_adc_tm_chip		*adc_tm_dev;
+#ifdef CONFIG_HUAWEI_KERNEL
+	int				fake_soc_count;
+	int 			warm_reset_shutdown_soc_valid_limit;
+	int				estimate_new_ocv_flag;
+#endif
+
 };
 
 static struct of_device_id qpnp_bms_match_table[] = {
@@ -306,6 +328,9 @@ static enum power_supply_property msm_bms_power_props[] = {
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
+#ifdef CONFIG_HUAWEI_KERNEL
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+#endif
 };
 
 static int discard_backup_fcc_data(struct qpnp_bms_chip *chip);
@@ -736,7 +761,9 @@ static void reset_cc(struct qpnp_bms_chip *chip, u8 flags)
 		pr_err("cc reenable failed: %d\n", rc);
 	mutex_unlock(&chip->bms_output_lock);
 }
-
+#ifdef CONFIG_HUAWEI_KERNEL
+extern int hw_get_prop_batt_status( void);
+#endif
 static int get_battery_status(struct qpnp_bms_chip *chip)
 {
 	union power_supply_propval ret = {0,};
@@ -744,9 +771,13 @@ static int get_battery_status(struct qpnp_bms_chip *chip)
 	if (chip->batt_psy == NULL)
 		chip->batt_psy = power_supply_get_by_name("battery");
 	if (chip->batt_psy) {
+#ifdef CONFIG_HUAWEI_KERNEL
+		ret.intval = hw_get_prop_batt_status();
+#else
 		/* if battery has been registered, use the status property */
 		chip->batt_psy->get_property(chip->batt_psy,
 					POWER_SUPPLY_PROP_STATUS, &ret);
+#endif
 		return ret.intval;
 	}
 
@@ -754,7 +785,6 @@ static int get_battery_status(struct qpnp_bms_chip *chip)
 	pr_debug("battery power supply is not registered\n");
 	return POWER_SUPPLY_STATUS_UNKNOWN;
 }
-
 static bool is_battery_charging(struct qpnp_bms_chip *chip)
 {
 	return get_battery_status(chip) == POWER_SUPPLY_STATUS_CHARGING;
@@ -957,6 +987,15 @@ static int read_soc_params_raw(struct qpnp_bms_chip *chip,
 		pr_debug("PON_OCV_UV = %d, cc = %llx\n",
 				chip->last_ocv_uv, raw->cc);
 		warm_reset = qpnp_pon_is_warm_reset();
+		/* when ocv is in "flat portion" use shutdown valid limit (warm reset )*/
+#ifdef CONFIG_HUAWEI_KERNEL
+		if(raw->last_good_ocv_uv > chip->ocv_low_threshold_uv && raw->last_good_ocv_uv < chip->ocv_high_threshold_uv )
+		{
+			chip->estimate_new_ocv_flag = 1;
+			pr_info("ocv_low_threshold_uv is %d ,ocv_high_threshold_uv is %d ,last_good_ocv_uv is %d \n",
+				chip->ocv_low_threshold_uv,chip->ocv_high_threshold_uv,raw->last_good_ocv_uv);	
+		}
+#endif
 		if (raw->last_good_ocv_uv < MIN_OCV_UV
 				|| warm_reset > 0) {
 			pr_debug("OCV is stale or bad, estimating new OCV.\n");
@@ -965,6 +1004,12 @@ static int read_soc_params_raw(struct qpnp_bms_chip *chip,
 			reset_cc(chip, CLEAR_CC | CLEAR_SHDW_CC);
 			pr_debug("New PON_OCV_UV = %d, cc = %llx\n",
 					chip->last_ocv_uv, raw->cc);
+#ifdef CONFIG_HUAWEI_KERNEL
+			if(chip->estimate_new_ocv_flag == 0)
+			{
+				chip->estimate_new_ocv_flag = 1;
+			}
+#endif
 		}
 	} else if (chip->new_battery) {
 		/* if a new battery was inserted, estimate the ocv */
@@ -1829,7 +1874,7 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 			soc_change = min(1, soc_change);
 		}
 
-		if (soc < chip->last_soc && soc != 0)
+		if (soc < chip->last_soc && soc != 0 && soc != CUTOFF_BATTERY_LEVEL)
 			soc = chip->last_soc - soc_change;
 		if (soc > chip->last_soc && soc != 100)
 			soc = chip->last_soc + soc_change;
@@ -1994,6 +2039,145 @@ static void cv_voltage_check(struct qpnp_bms_chip *chip, int vbat_uv)
 	}
 }
 
+#ifdef CONFIG_HUAWEI_KERNEL
+/* parse cmdline to judge  factory mode or not */
+static bool factory_flag = false;
+static int __init early_parse_factory_flag(char * p)
+{
+	if(p)
+	{
+		if(!strcmp(p,"factory"))
+		{
+			factory_flag = true;
+		}
+	}
+	return 0;
+}
+early_param("androidboot.huawei_swtype",early_parse_factory_flag);
+
+
+#define HW_PROTECT_VOLTAGE_UV 3250000
+#define HW_MAX_BAD_VOLTAGE_COUNT 10
+#define AVERAGE_VBAT_UV_SAMPLE_COUNT	5
+static int bad_voltage_count= 0;
+/*====================================================================================
+FUNCTION: get_avarage_vbat_uv
+
+DESCRIPTION:	return the avarage vbat_uv of sample_count's voltage
+
+INPUT:	struct qpnp_bms_chip *chip
+		int sample_count
+OUTPUT: avarage of vbat_uv
+RETURN: fail : -1
+		success :avarage of vbat_uv
+
+======================================================================================*/
+int get_avarage_vbat_uv(struct qpnp_bms_chip *chip,int sample_count)
+{
+	int i = 0,vbat_uv = 0,sum = 0,rc = 0;
+	if(chip == NULL)
+	{
+		return -1;
+	}
+	/* sample_count scope is 1 -256 */
+	sample_count = sample_count > 0 ? sample_count : 1;
+	sample_count = sample_count < 256 ? sample_count : 256;
+
+	for(i = 0; i < sample_count ;i++)
+	{
+		rc = get_battery_voltage(chip,&vbat_uv);
+		if(rc)
+		{
+			pr_info("get battery voltage failed \n");
+			return -1;
+		}
+		sum += vbat_uv;
+	}
+
+	vbat_uv = sum /sample_count;
+	
+	return vbat_uv;
+	
+}
+
+/*====================================================================================
+FUNCTION: hw_protect_voltage_check
+
+DESCRIPTION:	when usb in, check the voltage is lower than  HW_PROTECT_VOLTAGE_UV
+
+INPUT:	struct qpnp_bms_chip *chip
+		int sample_count
+		int soc
+OUTPUT: return soc
+RETURN: return soc
+
+======================================================================================*/
+
+#define VOLTAE_CHECK_BEGAIN_SECOND		30 //power_up time is set default 30 second
+int hw_protect_voltage_check(struct qpnp_bms_chip *chip,int soc,int sample_count)
+{
+	int vbat_uv = 0;
+	struct timespec kernel_time;
+	static bool power_up_flag = false;
+	//check null pointer
+	if(chip == NULL)
+	{
+		return soc;
+	}
+
+
+	/*  check voltage only after the phone power up */
+	if(power_up_flag != true)
+	{
+		/*  kernel time is less than VOLTAE_CHECK_BEGAIN_SECOND ,   return soc
+		     kernel time is greater than VOLTAE_CHECK_BEGAIN_SECOND, set flag true*/
+		ktime_get_ts(&kernel_time);
+		if(kernel_time.tv_sec < VOLTAE_CHECK_BEGAIN_SECOND)
+		{
+			pr_debug(" power_up time do not check voltage of battery,soc is %d ,kernel_time is %lu \n", soc,(unsigned long )kernel_time.tv_sec);
+			return soc;
+		}
+		else
+		{
+			pr_info("set power_up flag true \n");
+			power_up_flag = true;
+		}		
+	}
+
+	/* get vbatt uv based on */
+	vbat_uv = get_avarage_vbat_uv(chip,sample_count);
+
+	if(vbat_uv < 0)
+	{
+		pr_info("Attention ,get battery voltage failed return soc \n");
+		return soc ;
+	}
+	
+	if(vbat_uv < HW_PROTECT_VOLTAGE_UV)
+	{
+		bad_voltage_count = min((bad_voltage_count + 1),HW_MAX_BAD_VOLTAGE_COUNT );
+	}
+	else
+	{
+		bad_voltage_count = 0;
+	}
+	
+	if(bad_voltage_count >= HW_MAX_BAD_VOLTAGE_COUNT)
+	{
+		pr_info("Voltage is too low,change soc to zero\n ");
+		soc = 0;
+	}
+	else if( soc == 0)
+	{
+		pr_debug("Voltage is higher than HW_MAX_BAD_VOLTAGE_COUNT ,change soc from zero to 1 \n ");
+		soc = 1;
+	}
+	pr_debug("soc %d , bad_voltage_count %d ,avarage vbat_uv %d \n ",soc ,bad_voltage_count ,vbat_uv);
+	return soc;
+}
+
+#endif
+
 #define NO_ADJUST_HIGH_SOC_THRESHOLD	90
 static int adjust_soc(struct qpnp_bms_chip *chip, struct soc_params *params,
 							int soc, int batt_temp)
@@ -2009,6 +2193,13 @@ static int adjust_soc(struct qpnp_bms_chip *chip, struct soc_params *params,
 	int rc = 0;
 	int delta_ocv_uv_limit = 0;
 	int correction_limit_uv = 0;
+
+#ifdef CONFIG_HUAWEI_KERNEL
+	static int lower_than_cutoff_v_count = 0;
+	static int adjust_to_cutoff_batt_level_flag = false;
+	int hw_ocv_est_uv;
+	static int fake_low_level_flag = false;
+#endif
 
 	rc = get_simultaneous_batt_v_and_i(chip, &ibat_ua, &vbat_uv);
 	if (rc < 0) {
@@ -2035,6 +2226,10 @@ static int adjust_soc(struct qpnp_bms_chip *chip, struct soc_params *params,
 	}
 
 	if (is_battery_charging(chip)) {
+#ifdef CONFIG_HUAWEI_KERNEL
+		adjust_to_cutoff_batt_level_flag = false;
+		fake_low_level_flag = false;
+#endif
 		soc = charging_adjustments(chip, params, soc, vbat_uv, ibat_ua,
 				batt_temp);
 		/* Skip adjustments if we are in CV or ibat is negative */
@@ -2050,10 +2245,19 @@ static int adjust_soc(struct qpnp_bms_chip *chip, struct soc_params *params,
 	 * because we might pull it low
 	 * and cause a bad user experience
 	 */
+#ifdef CONFIG_HUAWEI_KERNEL
+	if (soc_est == soc
+		|| soc_est > chip->adjust_soc_low_threshold
+		|| soc >= NO_ADJUST_HIGH_SOC_THRESHOLD)
+    {
+        goto out_check_cutoff_v;
+    }
+#else
 	if (soc_est == soc
 		|| soc_est > chip->adjust_soc_low_threshold
 		|| soc >= NO_ADJUST_HIGH_SOC_THRESHOLD)
 		goto out;
+#endif
 
 	if (chip->last_soc_est == -EINVAL)
 		chip->last_soc_est = soc;
@@ -2138,7 +2342,80 @@ skip_limits:
 
 	soc = soc_new;
 
+#ifdef CONFIG_HUAWEI_KERNEL
+out_check_cutoff_v:
+	/* allow max delta uv between ocv_est_uv and vbat_uv is OCV_VBAT_MAX_DELTA_UV*/
+	hw_ocv_est_uv = ocv_est_uv;
+	if(ocv_est_uv > vbat_uv )
+	{
+		hw_ocv_est_uv = min(ocv_est_uv,(vbat_uv + OCV_VBAT_MAX_DELTA_UV));
+		pr_debug("hw_ocv_est_uv is %d ,ocv_est_uv is %d \n",hw_ocv_est_uv,ocv_est_uv);
+	}
+	if((hw_ocv_est_uv  > chip->v_cutoff_uv + CUTOFF_VOLTAGE_DELTA_UV ) && (soc <= CUTOFF_BATTERY_LEVEL)
+		&& (!adjust_to_cutoff_batt_level_flag))
+	{
+		soc = CUTOFF_BATTERY_LEVEL + 1;
+		chip->last_ocv_uv = find_ocv_for_pc(chip, batt_temp,find_pc_for_soc(chip, params, soc));
+		fake_low_level_flag = true;
+#if 0
+		find_ocv_for_soc(chip,params,batt_temp,soc,&ocv_uv);
+
+		chip->last_ocv_uv = ocv_uv;
+#endif
+		pr_err("adjust to cutoff level + 1\n");
+	}
+	else if(( hw_ocv_est_uv < chip->v_cutoff_uv + CUTOFF_VOLTAGE_DELTA_UV ) && (soc > CUTOFF_BATTERY_LEVEL))
+	{
+		lower_than_cutoff_v_count ++;
+		pr_err("lower_than_cutoff_v_count++\n");
+	}
+	else
+	{
+		lower_than_cutoff_v_count = 0;
+
+	}
+	if(lower_than_cutoff_v_count > VOLTAGE_CONFIRM_MAX_COUNTER)
+	{
+		soc = CUTOFF_BATTERY_LEVEL;
+		chip->last_ocv_uv = find_ocv_for_pc(chip, batt_temp,find_pc_for_soc(chip, params, soc));
+#if 0
+		find_ocv_for_soc(chip,params,batt_temp,soc,&ocv_uv);
+		chip->last_ocv_uv = ocv_uv;
+#endif
+		adjust_to_cutoff_batt_level_flag = true;
+		printk("adjust to cutoff level \n");
+	}
+
+	if((true == adjust_to_cutoff_batt_level_flag) && (soc > CUTOFF_BATTERY_LEVEL))
+	{
+		soc = CUTOFF_BATTERY_LEVEL;
+		printk("soc = CUTOFF_BATTERY_LEVEL; \n");
+	}
+	/* if soc is zero during discharing, give a fake soc
+	  * as one to avoid immediate poweroff
+	  */
+	if(fake_low_level_flag && soc == ZERO_SOC && (!is_battery_charging(chip)))
+	{
+		soc = FAKE_ZERO_SOC;
+	}
+#endif
 out:
+#ifdef CONFIG_HUAWEI_KERNEL
+	if((is_otg_host_mode() == 0) && (is_usb_chg_exist() == 1))
+	{
+		soc = hw_protect_voltage_check(chip,soc,AVERAGE_VBAT_UV_SAMPLE_COUNT);
+	}
+	else if( bad_voltage_count != 0)
+	{
+		bad_voltage_count = 0 ;
+	}
+	
+	if(true == factory_flag &&  0 == soc)
+	{
+		pr_info("do not report zero in factory mode \n");
+		soc = 1;
+	}
+#endif
 	pr_debug("ibat_ua = %d, vbat_uv = %d, ocv_est_uv = %d, pc_est = %d, soc_est = %d, n = %d, delta_ocv_uv = %d, last_ocv_uv = %d, pc_new = %d, soc_new = %d, rbatt = %d, slope = %d\n",
 		ibat_ua, vbat_uv, ocv_est_uv, pc_est,
 		soc_est, n, delta_ocv_uv, chip->last_ocv_uv,
@@ -2368,6 +2645,41 @@ static int calculate_state_of_charge(struct qpnp_bms_chip *chip,
 
 	pr_debug("SOC before adjustment = %d\n", soc);
 	new_calculated_soc = adjust_soc(chip, &params, soc, batt_temp);
+#ifdef CONFIG_HUAWEI_KERNEL
+
+#define CAPACITY_99 99
+#define CAPACITY_100 100
+#define SAMPLE_COUNTER 5
+#define DELTA_I_REPORT_100 -450000
+	if(new_calculated_soc == CAPACITY_99 && is_battery_charging(chip))
+	{
+		int ibat_ua = 0;
+		int vbat_uv = 0;
+
+		get_simultaneous_batt_v_and_i(chip,&ibat_ua, &vbat_uv);
+		pr_info("ibat_ua = %d\n",ibat_ua);
+		if(ibat_ua > DELTA_I_REPORT_100 && ibat_ua < 0)
+		{
+			chip->fake_soc_count++;
+			pr_info("fake_soc_count = %d\n",chip->fake_soc_count);
+			if(chip->fake_soc_count == SAMPLE_COUNTER)
+			{
+				chip->fake_soc_count = 0;
+				new_calculated_soc = CAPACITY_100;
+				chip->last_ocv_uv = find_ocv_for_pc(chip, batt_temp,find_pc_for_soc(chip, &params, new_calculated_soc));
+				pr_info("fake adjust soc = %d\n",new_calculated_soc);
+			}
+		}
+		else
+		{
+			chip->fake_soc_count = 0;
+		}
+	}
+	else
+	{
+		chip->fake_soc_count = 0;
+	}
+#endif
 
 	/* always clamp soc due to BMS hw/sw immaturities */
 	new_calculated_soc = clamp_soc_based_on_voltage(chip,
@@ -3342,6 +3654,11 @@ static int qpnp_bms_power_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CYCLE_COUNT:
 		val->intval = chip->charge_cycles;
 		break;
+#ifdef CONFIG_HUAWEI_KERNEL
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		val->intval = estimate_ocv(chip);
+		break;
+#endif
 	default:
 		return -EINVAL;
 	}
@@ -3470,6 +3787,13 @@ static void load_shutdown_data(struct qpnp_bms_chip *chip)
 	 * is close enough.
 	 */
 	calculated_soc = recalculate_raw_soc(chip);
+#ifdef CONFIG_HUAWEI_KERNEL
+	if(chip->estimate_new_ocv_flag)
+	{
+		pr_info("use warm_reset_shutdown_soc_valid_limit %d instead of shutdown_soc_valid_limit %d\n",chip->warm_reset_shutdown_soc_valid_limit,chip->shutdown_soc_valid_limit);
+		chip->shutdown_soc_valid_limit = chip->warm_reset_shutdown_soc_valid_limit;
+	}
+#endif
 	shutdown_soc_out_of_limit = (abs(shutdown_soc - calculated_soc)
 			> chip->shutdown_soc_valid_limit);
 	pr_debug("calculated_soc = %d, valid_limit = %d\n",
@@ -3540,6 +3864,7 @@ static int64_t read_battery_id(struct qpnp_bms_chip *chip)
 	return result.physical;
 }
 
+//remove huawei battery id solution
 static int set_battery_data(struct qpnp_bms_chip *chip)
 {
 	int64_t battery_id;
@@ -3647,6 +3972,7 @@ assign_data:
 
 	return 0;
 }
+//remove huawei battery id solution
 
 static int bms_get_adc(struct qpnp_bms_chip *chip,
 					struct spmi_device *spmi)
@@ -3747,6 +4073,17 @@ static inline int bms_read_properties(struct qpnp_bms_chip *chip)
 
 	if (chip->adjust_soc_low_threshold >= 45)
 		chip->adjust_soc_low_threshold = 45;
+
+#ifdef CONFIG_HUAWEI_KERNEL
+	if(chip->warm_reset_shutdown_soc_valid_limit == 0)
+	{
+		chip->warm_reset_shutdown_soc_valid_limit = DEFAULT_WARM_RESET_VALID_LIMIT;
+	}
+    if(chip->v_cutoff_uv == 0)
+    {
+        chip->v_cutoff_uv = CUTOFF_VOLTAGE_UV;
+    }
+#endif
 
 	SPMI_PROP_READ_BOOL(enable_fcc_learning, "enable-fcc-learning");
 	if (chip->enable_fcc_learning) {
@@ -4188,7 +4525,7 @@ static int __devinit qpnp_bms_probe(struct spmi_device *spmi)
 			goto error_read;
 		}
 	}
-
+//remove huawei battery id solution
 	rc = set_battery_data(chip);
 	if (rc) {
 		pr_err("Bad battery data %d\n", rc);
@@ -4259,6 +4596,7 @@ static int __devinit qpnp_bms_probe(struct spmi_device *spmi)
 	chip->bms_psy.supplied_to = qpnp_bms_supplicants;
 	chip->bms_psy.num_supplicants = ARRAY_SIZE(qpnp_bms_supplicants);
 
+#ifndef CONFIG_HUAWEI_KERNEL
 	rc = power_supply_register(chip->dev, &chip->bms_psy);
 
 	if (rc < 0) {
@@ -4267,6 +4605,7 @@ static int __devinit qpnp_bms_probe(struct spmi_device *spmi)
 	}
 
 	chip->bms_psy_registered = true;
+#endif
 	vbatt = 0;
 	rc = get_battery_voltage(chip, &vbatt);
 	if (rc) {
@@ -4284,6 +4623,16 @@ static int __devinit qpnp_bms_probe(struct spmi_device *spmi)
 	pr_info("probe success: soc =%d vbatt = %d ocv = %d r_sense_uohm = %u warm_reset = %d\n",
 			get_prop_bms_capacity(chip), vbatt, chip->last_ocv_uv,
 			chip->r_sense_uohm, warm_reset);
+#ifdef CONFIG_HUAWEI_KERNEL
+	rc = power_supply_register(chip->dev, &chip->bms_psy);
+
+	if (rc < 0) {
+		pr_err("power_supply_register bms failed rc = %d\n", rc);
+		goto unregister_dc;
+	}
+
+	chip->bms_psy_registered = true;
+#endif
 	return 0;
 
 unregister_dc:

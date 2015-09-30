@@ -19,6 +19,7 @@
 
 #include "mdss_panel.h"
 #include "mdss_io_util.h"
+#include <linux/msm_mdp.h>
 
 #define MMSS_SERDES_BASE_PHY 0x04f01000 /* mmss (De)Serializer CFG */
 
@@ -309,7 +310,6 @@ enum {
 #define DSI_EV_PLL_UNLOCKED		0x0001
 #define DSI_EV_MDP_FIFO_UNDERFLOW	0x0002
 #define DSI_EV_MDP_BUSY_RELEASE		0x80000000
-
 struct mdss_dsi_ctrl_pdata {
 	int ndx;	/* panel_num */
 	int (*on) (struct mdss_panel_data *pdata);
@@ -331,6 +331,7 @@ struct mdss_dsi_ctrl_pdata {
 	int mdss_dsi_clk_on;
 	int rst_gpio;
 	int disp_en_gpio;
+	int disp_en_gpio_vsn;
 	int disp_te_gpio;
 	int mode_gpio;
 	int rst_gpio_requested;
@@ -350,12 +351,19 @@ struct mdss_dsi_ctrl_pdata {
 	u32 byte_clk_rate;
 	struct dss_module_power power_data;
 	u32 dsi_irq_mask;
+	u32 dsi_mdp_clk_mask;
 	struct mdss_hw *dsi_hw;
 	struct mdss_panel_recovery *recovery;
 
 	struct dsi_panel_cmds on_cmds;
 	struct dsi_panel_cmds off_cmds;
 
+#ifdef CONFIG_FB_AUTO_CABC
+	struct dsi_panel_cmds dsi_panel_cabc_ui_cmds;
+	struct dsi_panel_cmds dsi_panel_cabc_video_cmds;
+
+//remove dynamic gamma
+#endif
 	struct dcs_cmd_list cmdlist;
 	struct completion dma_comp;
 	struct completion mdp_comp;
@@ -368,8 +376,10 @@ struct mdss_dsi_ctrl_pdata {
 
 	struct dsi_buf tx_buf;
 	struct dsi_buf rx_buf;
+#ifdef CONFIG_HUAWEI_LCD
+	int bl_en_gpio;
+#endif
 };
-
 int dsi_panel_device_register(struct device_node *pan_node,
 				struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 
@@ -432,4 +442,11 @@ void mdss_dsi_cmdlist_kickoff(int intf);
 int mdss_dsi_panel_init(struct device_node *node,
 		struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 		bool cmd_cfg_cont_splash);
+
+#ifdef CONFIG_HUAWEI_KERNEL
+void mdss_change_fps(void);
+int mdss_dsi_wait4video_done_ret(struct mdss_dsi_ctrl_pdata *ctrl);
+int mdss_dsi_set_fps(int frame_rate);
+#endif
+
 #endif /* MDSS_DSI_H */

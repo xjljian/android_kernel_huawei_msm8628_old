@@ -1815,8 +1815,32 @@ static int sdhci_msm_setup_vreg(struct sdhci_msm_pltfm_data *pdata,
 		goto out;
 	}
 
+	/*L21 should be powered up before L18 when resume and
+	 *L18 should be powered down before L21 when suspend.
+	 */
+#ifdef CONFIG_HUAWEI_KERNEL
+	if(pdata->nonremovable != true)
+	{
+		if(enable)
+		{
+			vreg_table[0] = curr_slot->vdd_io_data;
+			vreg_table[1] = curr_slot->vdd_data;
+		}
+		else
+		{
+			vreg_table[0] = curr_slot->vdd_data;
+			vreg_table[1] = curr_slot->vdd_io_data;
+		}
+	}
+	else
+	{
+		vreg_table[0] = curr_slot->vdd_data;
+		vreg_table[1] = curr_slot->vdd_io_data;
+	}
+#else
 	vreg_table[0] = curr_slot->vdd_data;
 	vreg_table[1] = curr_slot->vdd_io_data;
+#endif
 
 	for (i = 0; i < ARRAY_SIZE(vreg_table); i++) {
 		if (vreg_table[i]) {

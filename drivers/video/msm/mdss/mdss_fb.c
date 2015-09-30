@@ -52,6 +52,11 @@
 #include <mach/msm_memtypes.h>
 
 #include "mdss_fb.h"
+#include <linux/hw_lcd_common.h>
+
+#ifdef CONFIG_HUAWEI_KERNEL
+#include "mdss_dsi.h"
+#endif
 
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
@@ -93,6 +98,11 @@ static int __mdss_fb_sync_buf_done_callback(struct notifier_block *p,
 
 static int __mdss_fb_display_thread(void *data);
 static void mdss_fb_pan_idle(struct msm_fb_data_type *mfd);
+#ifdef CONFIG_FB_AUTO_CABC
+static int mdss_fb_config_cabc(struct msm_fb_data_type *mfd,struct msmfb_cabc_config cabc_cfg);
+struct msmfb_cabc_config last_cabc_mode;
+u32 last_cabc_setting = false;
+#endif
 static int mdss_fb_send_panel_event(struct msm_fb_data_type *mfd,
 					int event, void *arg);
 void mdss_fb_no_update_notify_timer_cb(unsigned long data)
@@ -169,6 +179,7 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 		mdss_fb_set_backlight(mfd, bl_lvl);
 		mutex_unlock(&mfd->bl_lock);
 	}
+
 }
 
 static struct led_classdev backlight_led = {
@@ -261,13 +272,47 @@ static ssize_t mdss_mdp_show_blank_event(struct device *dev,
 	return ret;
 }
 
+#ifdef CONFIG_HUAWEI_KERNEL
+// add frame_rate attr for debug
+static ssize_t framerate_show(struct device *dev,
+                 struct device_attribute *attr, char *buf)
+{
+    ssize_t ret = 0;
+    struct fb_info *fbi = dev_get_drvdata(dev);
+    struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+
+    ret = scnprintf(buf, PAGE_SIZE, "frame_rate = %d\n",
+                                mfd->panel_info->mipi.frame_rate);
+    return ret;
+}
+static ssize_t framerate_store(struct device *dev,
+                  struct device_attribute *attr,
+                  const char *buf, size_t count)
+{
+    unsigned long frame_rate;
+
+    if (strict_strtoul(buf, 10, &frame_rate))  //10 just for debug
+        return -EINVAL;
+    if (!frame_rate)
+        return -EINVAL;
+    mdss_dsi_set_fps(frame_rate);
+    return count;
+}
+#endif  //CONFIG_HUAWEI_KERNEL
+
 static DEVICE_ATTR(msm_fb_type, S_IRUGO, mdss_fb_get_type, NULL);
 static DEVICE_ATTR(msm_fb_split, S_IRUGO, mdss_fb_get_split, NULL);
+#ifdef CONFIG_HUAWEI_KERNEL
+static DEVICE_ATTR(frame_rate, S_IRUSR | S_IWUSR, framerate_show, framerate_store);
+#endif
 static DEVICE_ATTR(show_blank_event, S_IRUGO, mdss_mdp_show_blank_event, NULL);
 
 static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_type.attr,
 	&dev_attr_msm_fb_split.attr,
+#ifdef CONFIG_HUAWEI_KERNEL
+    &dev_attr_frame_rate.attr,
+#endif
 	&dev_attr_show_blank_event.attr,
 	NULL,
 };
@@ -399,7 +444,10 @@ static int mdss_fb_probe(struct platform_device *pdev)
 		mfd->mdp_sync_pt_data.threshold = 1;
 	else
 		mfd->mdp_sync_pt_data.threshold = 2;
-
+#if defined(CONFIG_HUAWEI_KERNEL) && defined(CONFIG_DEBUG_FS)
+	/* init lcd debugfs interface */
+	lcd_debugfs_init();
+#endif
 	return rc;
 }
 
@@ -633,7 +681,8 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 	struct mdss_panel_data *pdata;
 	int (*update_ad_input)(struct msm_fb_data_type *mfd);
 	u32 temp = bkl_lvl;
-
+	
+	LCD_LOG_DBG("%s: bl_updated = %d, bkl_lvl = %d\n",__func__,mfd->bl_updated,bkl_lvl);
 	if (((!mfd->panel_power_on && mfd->dcm_state != DCM_ENTER)
 		|| !mfd->bl_updated) && !IS_CALIB_MODE_BL(mfd)) {
 		mfd->unset_bl_level = bkl_lvl;
@@ -672,7 +721,29 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 		}
 	}
 }
-
+#ifdef CONFIG_HUAWEI_LCD
+void mdss_fb_update_backlight_wq_handler(struct work_struct *work)
+{
+	struct mdss_panel_data *pdata;
+	struct msm_fb_data_type *mfd;
+	mfd = container_of(to_delayed_work(work), struct msm_fb_data_type, bkl_work);
+	
+	LCD_LOG_DBG("%s: enter\n",__func__);
+	mutex_lock(&mfd->bl_lock);
+	if (mfd->unset_bl_level) {
+		pdata = dev_get_platdata(&mfd->pdev->dev);
+		if ((pdata) && (pdata->set_backlight)) {
+			mfd->bl_level = mfd->unset_bl_level;
+			pdata->set_backlight(pdata, mfd->bl_level);
+			mfd->bl_level_old = mfd->unset_bl_level;
+			mfd->unset_bl_level = 0;
+			LCD_LOG_INFO("%s: set backlight to %d\n",__func__,mfd->bl_level);
+		}
+	}
+	mfd->bl_updated = 1;
+	mutex_unlock(&mfd->bl_lock);
+}
+#else
 void mdss_fb_update_backlight(struct msm_fb_data_type *mfd)
 {
 	struct mdss_panel_data *pdata;
@@ -689,11 +760,15 @@ void mdss_fb_update_backlight(struct msm_fb_data_type *mfd)
 		}
 	}
 }
-
+#endif
+/* use dynamic log */
 static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 			     int op_enable)
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
+#ifdef CONFIG_HUAWEI_LCD
+	struct mdss_panel_data *pdata = NULL;
+#endif
 	int ret = 0;
 
 	if (!op_enable)
@@ -702,6 +777,13 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 	if (mfd->dcm_state == DCM_ENTER)
 		return -EPERM;
 
+#ifdef CONFIG_HUAWEI_LCD
+	pdata = dev_get_platdata(&mfd->pdev->dev);
+	if (!pdata) {
+		LCD_LOG_ERR( "mdss_fb_blank_sub: no panel operation detected!\n");
+		return -ENODEV;
+	}
+#endif
 	switch (blank_mode) {
 	case FB_BLANK_UNBLANK:
 		if (!mfd->panel_power_on && mfd->mdp.on_fnc) {
@@ -711,6 +793,21 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 			mutex_lock(&mfd->update.lock);
 			mfd->update.type = NOTIFY_TYPE_UPDATE;
 			mutex_unlock(&mfd->update.lock);
+#ifdef CONFIG_HUAWEI_LCD
+			/*writeback panel no need for the following setting, only for lcd panel */
+			if(pdata->panel_info.type != WRITEBACK_PANEL)
+			{
+				/*when lcd resume, firstly we set the saved cabc values if necessary*/
+				#ifdef CONFIG_FB_AUTO_CABC
+				if(true == last_cabc_setting)
+				{
+					mdss_fb_config_cabc(mfd, last_cabc_mode);
+					last_cabc_setting =false;
+					LCD_LOG_INFO("%s:Waiting for LCD resume ,then set cabc mode =%d\n",__func__,last_cabc_mode.mode);
+				}
+				#endif
+			}
+#endif
 		}
 		break;
 
@@ -721,7 +818,6 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 	default:
 		if (mfd->panel_power_on && mfd->mdp.off_fnc) {
 			int curr_pwr_state;
-
 			mutex_lock(&mfd->update.lock);
 			mfd->update.type = NOTIFY_TYPE_SUSPEND;
 			mutex_unlock(&mfd->update.lock);
@@ -732,14 +828,16 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 			mfd->op_enable = false;
 			curr_pwr_state = mfd->panel_power_on;
 			mfd->panel_power_on = false;
-			mfd->bl_updated = 0;
-
+			cancel_delayed_work_sync(&mfd->bkl_work);
+			LCD_LOG_DBG("%s: cancle bkl_delay work \n",__func__);
 			ret = mfd->mdp.off_fnc(mfd);
 			if (ret)
 				mfd->panel_power_on = curr_pwr_state;
 			else
 				mdss_fb_release_fences(mfd);
 			mfd->op_enable = true;
+			mfd->bl_updated = 0;
+			LCD_LOG_DBG("%s: bl_updated set as 0 when panel off \n",__func__);
 			complete(&mfd->power_off_comp);
 		}
 		break;
@@ -1100,7 +1198,9 @@ static int mdss_fb_register(struct msm_fb_data_type *mfd)
 	init_completion(&mfd->power_set_comp);
 	init_waitqueue_head(&mfd->commit_wait_q);
 	init_waitqueue_head(&mfd->idle_wait_q);
-
+#ifdef CONFIG_HUAWEI_LCD
+	INIT_DELAYED_WORK(&mfd->bkl_work, mdss_fb_update_backlight_wq_handler);
+#endif
 	ret = fb_alloc_cmap(&fbi->cmap, 256, 0);
 	if (ret)
 		pr_err("fb_alloc_cmap() failed!\n");
@@ -1411,7 +1511,7 @@ static int mdss_fb_pan_display_ex(struct fb_info *info,
 	u32 wait_for_finish = disp_commit->wait_for_finish;
 	int ret = 0;
 
-	if ((!mfd->op_enable) || (!mfd->panel_power_on))
+	if (!mfd || (!mfd->op_enable) || (!mfd->panel_power_on))
 		return -EPERM;
 
 	if (var->xoffset > (info->var.xres_virtual - info->var.xres))
@@ -1530,7 +1630,14 @@ static int __mdss_fb_perform_commit(struct msm_fb_data_type *mfd)
 					mfd->index);
 	}
 	if (!ret)
+	{
+	#ifdef CONFIG_HUAWEI_LCD
+		LCD_LOG_DBG("%s:%d schedule work delaytime=%d ms\n",__func__,__LINE__,mfd->panel_info->delaytime_before_bl);
+		schedule_delayed_work(&mfd->bkl_work,msecs_to_jiffies(mfd->panel_info->delaytime_before_bl));
+	#else
 		mdss_fb_update_backlight(mfd);
+	#endif
+	}
 
 	if (IS_ERR_VALUE(ret) || !sync_pt_data->flushed)
 		mdss_fb_signal_timeline(sync_pt_data);
@@ -1817,7 +1924,35 @@ static int mdss_fb_set_lut(struct fb_info *info, void __user *p)
 	mfd->mdp.lut_update(mfd, &cmap);
 	return 0;
 }
+#ifdef CONFIG_FB_AUTO_CABC
+/***************************************************************
+Function: mdss_fb_config_cabc
+Description: Config CABC parameter
+Parameters:
+	struct msm_fb_data_type *mfd: mfd pointer
+	struct msmfb_cabc_config cabc_cfg: CABC config structure
+Return:
+	0: success
+***************************************************************/
+static int mdss_fb_config_cabc(struct msm_fb_data_type *mfd,struct msmfb_cabc_config cabc_cfg)
+{
+	int ret = 0;
+	struct mdss_panel_data *pdata = NULL;
 
+	pdata = dev_get_platdata(&mfd->pdev->dev);
+	if ((pdata) && (pdata->config_cabc))
+	{
+		ret = pdata->config_cabc(pdata,cabc_cfg);
+	}
+	else
+	{
+		pr_err("This panel can not support auto cabc function\n");
+		ret = EINVAL;
+	}
+
+	return ret;
+}
+#endif
 /**
  * mdss_fb_sync_get_rel_fence() - get release fence from sync pt timeline
  * @sync_pt_data:	Sync pt structure holding timeline and fence info.
@@ -1957,9 +2092,13 @@ static int mdss_fb_display_commit(struct fb_info *info,
 }
 
 
+/* use dynamic log */
 static int mdss_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			 unsigned long arg)
 {
+#ifdef CONFIG_FB_AUTO_CABC
+	struct msmfb_cabc_config cabc_cfg;
+#endif
 	struct msm_fb_data_type *mfd;
 	void __user *argp = (void __user *)arg;
 	struct mdp_page_protection fb_page_protection;
@@ -1991,6 +2130,31 @@ static int mdss_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		if (ret)
 			return ret;
 		break;
+#ifdef CONFIG_FB_AUTO_CABC
+	case MSMFB_AUTO_CABC:
+		ret = copy_from_user(&cabc_cfg, argp, sizeof(cabc_cfg));
+		if (ret)
+		{
+			LCD_LOG_ERR( "%s:MSMFB_AUTO_CABC ioctl failed \n",
+			 __func__);
+			return ret;
+		}
+
+		/*if lcd is not resumed, save the cabc_mode value, so it will be set when lcd resume*/
+		if(!mfd->panel_power_on)
+		{
+			last_cabc_mode = cabc_cfg;
+			last_cabc_setting =true;
+			LCD_LOG_INFO("%s:MSMFB_AUTO_CABC save last setting \n",
+				__func__);
+		}
+		else
+		{
+			ret = mdss_fb_config_cabc(mfd, cabc_cfg);
+			last_cabc_setting =false;
+		}
+		break;
+#endif
 
 	case MSMFB_BUFFER_SYNC:
 		ret = copy_from_user(&buf_sync, argp, sizeof(buf_sync));
@@ -2072,7 +2236,6 @@ static int mdss_fb_register_extra_panel(struct platform_device *pdev,
 
 	return 0;
 }
-
 int mdss_register_panel(struct platform_device *pdev,
 	struct mdss_panel_data *pdata)
 {

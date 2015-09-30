@@ -41,6 +41,18 @@
 #define SDHCI_USE_LEDS_CLASS
 #endif
 
+#ifdef CONFIG_HUAWEI_KERNEL
+extern int mmc_debug_mask;
+module_param_named(debug_mask, mmc_debug_mask, int, 
+				   S_IRUGO | S_IWUSR | S_IWGRP);
+
+#define HUAWEI_DBG(fmt, args...) \
+	do { \
+	    if (mmc_debug_mask) \
+		    printk(fmt, args); \
+	} while (0)
+#endif /* CONFIG_HUAWEI_KERNEL */
+
 #define MAX_TUNING_LOOP 40
 
 static unsigned int debug_quirks = 0;
@@ -1539,7 +1551,11 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	else
 		present = sdhci_readl(host, SDHCI_PRESENT_STATE) &
 				SDHCI_CARD_PRESENT;
-
+#ifdef CONFIG_HUAWEI_KERNEL 
+    HUAWEI_DBG("HUAWEI %s: starting CMD%u arg %08x flags %08x\n",
+		 mmc_hostname(host->mmc), mrq->cmd->opcode,
+		 mrq->cmd->arg, mrq->cmd->flags);
+#endif
 	if (!present || host->flags & SDHCI_DEVICE_DEAD) {
 		host->mrq->cmd->error = -ENOMEDIUM;
 		tasklet_schedule(&host->finish_tasklet);
@@ -1567,7 +1583,12 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		else
 			sdhci_send_command(host, mrq->cmd);
 	}
-
+#ifdef CONFIG_HUAWEI_KERNEL
+    HUAWEI_DBG("HUAWEI %s: req end (CMD%u): %08x %08x %08x %08x\n",
+			mmc_hostname(host->mmc), mrq->cmd->opcode,
+			mrq->cmd->resp[0], mrq->cmd->resp[1],
+			mrq->cmd->resp[2], mrq->cmd->resp[3]);
+#endif 
 	mmiowb();
 	spin_unlock_irqrestore(&host->lock, flags);
 }
@@ -1758,7 +1779,13 @@ static void sdhci_do_set_ios(struct sdhci_host *host, struct mmc_ios *ios)
 static void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 {
 	struct sdhci_host *host = mmc_priv(mmc);
-
+#ifdef CONFIG_HUAWEI_KERNEL 
+    HUAWEI_DBG("%s: clock %uHz busmode %u powermode %u cs %u Vdd %u "
+		"width %u timing %u\n",
+		 mmc_hostname(mmc), ios->clock, ios->bus_mode,
+		 ios->power_mode, ios->chip_select, ios->vdd,
+		 ios->bus_width, ios->timing);
+#endif
 	sdhci_runtime_pm_get(host);
 	sdhci_do_set_ios(host, ios);
 	sdhci_runtime_pm_put(host);

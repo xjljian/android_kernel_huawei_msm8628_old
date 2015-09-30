@@ -93,6 +93,7 @@ struct mdss_data_type {
 	u32 mdp_hist_irq_mask;
 
 	int suspend_fs_ena;
+	u32 clk_mask;
 	u8 clk_ena;
 	u8 fs_ena;
 	u8 vsync_ena;
@@ -166,6 +167,9 @@ void mdss_enable_irq(struct mdss_hw *hw);
 void mdss_disable_irq(struct mdss_hw *hw);
 void mdss_disable_irq_nosync(struct mdss_hw *hw);
 void mdss_bus_bandwidth_ctrl(int enable);
+
+void mdss_enable_mdp_clk(struct mdss_hw *hw);
+void mdss_disable_mdp_clk(struct mdss_hw *hw);
 
 static inline struct ion_client *mdss_get_ionclient(void)
 {

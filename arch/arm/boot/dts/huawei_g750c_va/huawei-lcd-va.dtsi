@@ -1,0 +1,9 @@
+
+
+/include/ "tianma-nt35521-5p5-720p-video.dtsi"
+/include/ "boe-nt35521-5p5-720p-video.dtsi"
+/include/ "tianma-nt35520-5p5-720p-cmd.dtsi"
+/include/ "boe-nt35520-5p5-720p-cmd.dtsi"
+
+/include/ "default_lcd.dtsi"
+

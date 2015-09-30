@@ -81,6 +81,10 @@
 #define VFE40_BUS_BDG_QOS_CFG_6     0x000002DC
 #define VFE40_BUS_BDG_QOS_CFG_7     0x000002E0
 
+#ifdef CONFIG_HUAWEI_KERNEL_CAMERA
+#define HW_MAX_SOF_LOG_NUM 5
+static int log_print_num = 0;
+#endif
 #define VFE40_CLK_IDX 1
 static struct msm_cam_clk_info msm_vfe40_clk_info[] = {
 	{"camss_top_ahb_clk", -1},
@@ -348,6 +352,15 @@ static void msm_vfe40_init_hardware_reg(struct vfe_device *vfe_dev)
 	msm_camera_io_w_mb(0xFEFFFFFF, vfe_dev->vfe_base + 0x2C);
 	msm_camera_io_w(0xFFFFFFFF, vfe_dev->vfe_base + 0x30);
 	msm_camera_io_w_mb(0xFEFFFFFF, vfe_dev->vfe_base + 0x34);
+
+	msm_camera_io_w_mb(0xFEFFFFFF, vfe_dev->vfe_base + 0x30);
+	msm_camera_io_w_mb(0xFEFFFFFF, vfe_dev->vfe_base + 0x34);
+	msm_camera_io_w_mb(1, vfe_dev->vfe_base + 0x24);
+
+	vfe_dev->error_info.error_mask1  = 0;
+	vfe_dev->error_info.error_mask0  = 0;
+	vfe_dev->error_info.camif_status = 0;
+	vfe_dev->error_info.violation_status = 0;
 }
 
 static void msm_vfe40_process_reset_irq(struct vfe_device *vfe_dev,
@@ -372,7 +385,15 @@ static void msm_vfe40_process_camif_irq(struct vfe_device *vfe_dev,
 		return;
 
 	if (irq_status0 & (1 << 0)) {
+#ifdef CONFIG_HUAWEI_KERNEL_CAMERA
+		if(log_print_num > 0)
+		{
+			log_print_num--;
+			pr_info("%s: SOF IRQ %d\n", __func__,log_print_num);
+		}
+#else
 		ISP_DBG("%s: SOF IRQ\n", __func__);
+#endif
 		if (vfe_dev->axi_data.src_info[VFE_PIX_0].raw_stream_count > 0
 			&& vfe_dev->axi_data.src_info[VFE_PIX_0].
 			pix_stream_count == 0) {
@@ -571,10 +592,28 @@ static void msm_vfe40_reg_update(struct vfe_device *vfe_dev)
 	msm_camera_io_w_mb(0xF, vfe_dev->vfe_base + 0x378);
 }
 
-static long msm_vfe40_reset_hardware(struct vfe_device *vfe_dev)
+static uint32_t msm_vfe40_reset_values[ISP_RST_MAX] = {
+	0x1FF, /* ISP_RST_HARD reset everything */
+	0x1EF  /* ISP_RST_SOFT all modules without registers */
+};
+
+static long msm_vfe40_reset_hardware(struct vfe_device *vfe_dev,
+                   enum msm_isp_reset_type reset_type)
 {
+	 uint32_t rst_val;
+	if (reset_type >= ISP_RST_MAX) {
+		pr_err("%s: Error Invalid parameter\n", __func__);
+		reset_type = ISP_RST_HARD;
+	}
+	rst_val = msm_vfe40_reset_values[reset_type];
 	init_completion(&vfe_dev->reset_complete);
-	msm_camera_io_w_mb(0x1FF, vfe_dev->vfe_base + 0xC);
+	msm_camera_io_w_mb(rst_val, vfe_dev->vfe_base + 0xC);
+
+#ifdef CONFIG_HUAWEI_KERNEL_CAMERA
+	pr_info("%s: \n",__func__);
+	//we print 5 times when camera stream on
+	log_print_num = HW_MAX_SOF_LOG_NUM;
+#endif
 	return wait_for_completion_interruptible_timeout(
 		&vfe_dev->reset_complete, msecs_to_jiffies(50));
 }
@@ -866,7 +905,12 @@ static void msm_vfe40_update_camif_state(struct vfe_device *vfe_dev,
 		msm_camera_io_w_mb(0x0, vfe_dev->vfe_base + 0x2F4);
 		vfe_dev->axi_data.src_info[VFE_PIX_0].active = 0;
 	} else if (update_state == DISABLE_CAMIF_IMMEDIATELY) {
-		msm_camera_io_w_mb(0x2, vfe_dev->vfe_base + 0x2F4);
+
+		val &= 0xFFFFFF3F; /* stop bus_en and vfe_en */
+		msm_camera_io_w(val, vfe_dev->vfe_base + 0x2F8);
+		/* CAMIF immediate stop + status clear */
+		msm_camera_io_w_mb((0x2+4), vfe_dev->vfe_base + 0x2F4);
+
 		vfe_dev->axi_data.src_info[VFE_PIX_0].active = 0;
 	}
 }
@@ -1102,14 +1146,17 @@ static void msm_vfe40_update_ping_pong_addr(
 
 static long msm_vfe40_axi_halt(struct vfe_device *vfe_dev)
 {
+	long	rc;
 	uint32_t halt_mask;
 	halt_mask = msm_camera_io_r(vfe_dev->vfe_base + 0x2C);
 	halt_mask |= (1 << 8);
 	msm_camera_io_w_mb(halt_mask, vfe_dev->vfe_base + 0x2C);
 	init_completion(&vfe_dev->halt_complete);
 	msm_camera_io_w_mb(0x1, vfe_dev->vfe_base + 0x2C0);
-	return wait_for_completion_interruptible_timeout(
+	rc =  wait_for_completion_interruptible_timeout(
 		&vfe_dev->halt_complete, msecs_to_jiffies(500));
+	msm_camera_io_w_mb(0x0, vfe_dev->vfe_base + 0x2C0);
+	return rc;
 }
 
 static uint32_t msm_vfe40_get_wm_mask(

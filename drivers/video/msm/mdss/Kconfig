@@ -20,3 +20,15 @@ config FB_MSM_MDSS_HDMI_MHL_SII8334
 	  Support the HDMI to MHL conversion.
 	  MHL (Mobile High-Definition Link) technology
 	  uses USB connector to output HDMI content
+
+config HUAWEI_LCD
+	depends on HUAWEI_KERNEL
+	bool "LCD display support"
+	default n
+	---help---
+	  use huawei feature
+config FB_AUTO_CABC
+	bool "Support for AUTO_CABC fuction"
+	depends on HUAWEI_LCD
+	default n
+#//remove dynamic gamma

@@ -15,6 +15,13 @@
 #include <linux/mod_devicetable.h>
 #include <linux/notifier.h>
 
+#ifdef CONFIG_HUAWEI_KERNEL
+#define EMMC_SANDISK_MANFID 0x45
+#define EMMC_HYNIX_MANFID 0x90
+#define EMMC_SAMSUNG_MANFID 0x15
+#define EMMC_TOSHIBA_MANFID 0x11
+#endif
+
 struct mmc_cid {
 	unsigned int		manfid;
 	char			prod_name[8];
@@ -352,6 +359,9 @@ struct mmc_card {
 #define MMC_QUIRK_INAND_DATA_TIMEOUT  (1<<8)    /* For incorrect data timeout */
 /* To avoid eMMC device getting broken permanently due to HPI feature */
 #define MMC_QUIRK_BROKEN_HPI (1 << 11)
+#ifdef CONFIG_HUAWEI_KERNEL 
+#define MMC_QUIRK_SAMSUNG_SMART (1<<10)          /* Samsung SMART is available */ 
+#endif
 
 	unsigned int		erase_size;	/* erase size in sectors */
  	unsigned int		erase_shift;	/* if erase unit is power 2 */
@@ -380,6 +390,10 @@ struct mmc_card {
 	unsigned int		sd_bus_speed;	/* Bus Speed Mode set for the card */
 
 	struct dentry		*debugfs_root;
+#ifdef CONFIG_HUAWEI_KERNEL
+	struct dentry          *debugfs_sdxc;
+#endif
+
 	struct mmc_part	part[MMC_NUM_PHY_PARTITION]; /* physical partitions */
 	unsigned int    nr_parts;
 	unsigned int	part_curr;
@@ -649,4 +663,7 @@ extern struct mmc_wr_pack_stats *mmc_blk_get_packed_statistics(
 extern void mmc_blk_init_packed_statistics(struct mmc_card *card);
 extern void mmc_blk_disable_wr_packing(struct mmc_queue *mq);
 extern int mmc_send_long_pon(struct mmc_card *card);
+#ifdef CONFIG_HUAWEI_KERNEL 
+extern ssize_t mmc_samsung_smart_handle(struct mmc_card *card, char *buf); 
+#endif
 #endif /* LINUX_MMC_CARD_H */

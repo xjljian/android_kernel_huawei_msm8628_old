@@ -69,6 +69,287 @@ static struct msm_gpiomux_config msm_eth_configs[] = {
 };
 #endif
 
+#ifdef CONFIG_HUAWEI_KERNEL
+/*config the nc gpio to input and pull down*/
+static struct gpiomux_setting gpio_nc_config = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_DOWN,
+	.dir = GPIOMUX_IN,
+};
+
+static struct msm_gpiomux_config msm_nc_gpio_configs[] __initdata = {
+	{
+		.gpio      = 0,		/* NC */
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 1,		/* NC */
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 2,		/* NC */
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 3,		/* NC */
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 10,		/* NC */
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 11,		/* NC */
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 20,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 21,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio = 27, /* NC */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &gpio_nc_config,
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+		},
+
+	},
+	{
+		.gpio      = 49,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 50,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 51,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 52,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 56,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio = 64,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio = 67,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 73,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 75,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 76,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 78,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 79,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 80,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 83,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 84,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 85,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 86,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 95,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 96,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 99,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 100,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 110,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 111,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 112,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 114,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 115,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+	{
+		.gpio      = 116,
+		.settings = {
+			[GPIOMUX_SUSPENDED] = &gpio_nc_config,
+			[GPIOMUX_ACTIVE] = &gpio_nc_config,
+		},
+	},
+};
+#endif
+/*If no Pull-up resistor outside,This must be set as this.*/
+#ifdef CONFIG_HUAWEI_KERNEL
+static struct gpiomux_setting synaptics_int_act_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_UP,
+	.dir = GPIOMUX_IN,
+};
+
+static struct gpiomux_setting synaptics_int_sus_cfg = {
+	.func = GPIOMUX_FUNC_GPIO,
+	.drv = GPIOMUX_DRV_2MA,
+	.pull = GPIOMUX_PULL_UP,
+	.dir = GPIOMUX_IN,
+};
+#else
 static struct gpiomux_setting synaptics_int_act_cfg = {
 	.func = GPIOMUX_FUNC_GPIO,
 	.drv = GPIOMUX_DRV_8MA,
@@ -80,7 +361,7 @@ static struct gpiomux_setting synaptics_int_sus_cfg = {
 	.drv = GPIOMUX_DRV_2MA,
 	.pull = GPIOMUX_PULL_DOWN,
 };
-
+#endif
 static struct gpiomux_setting synaptics_reset_act_cfg = {
 	.func = GPIOMUX_FUNC_GPIO,
 	.drv = GPIOMUX_DRV_6MA,
@@ -583,9 +864,18 @@ static struct gpiomux_setting cam_settings[] = {
 		.drv = GPIOMUX_DRV_2MA,
 		.pull = GPIOMUX_PULL_DOWN,
 	},
+#ifdef CONFIG_HUAWEI_KERNEL
+	{
+		.func = GPIOMUX_FUNC_GPIO, /*suspend 0*/ /* 5 */
+		.drv = GPIOMUX_DRV_2MA,
+		.pull = GPIOMUX_PULL_DOWN,
+		.dir =  GPIOMUX_OUT_LOW,
+	},
+#endif
+
 };
 
-
+/* corret the code mess caused by baseline update(commit 2ff4228c) */
 static struct msm_gpiomux_config msm_sensor_configs[] __initdata = {
 	{
 		.gpio = 26, /* CAM_MCLK0 */
@@ -602,6 +892,23 @@ static struct msm_gpiomux_config msm_sensor_configs[] __initdata = {
 		},
 
 	},
+#ifdef CONFIG_HUAWEI_KERNEL
+	{
+		.gpio = 28, /* CAM2_RST_N */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &cam_settings[3],
+			[GPIOMUX_SUSPENDED] = &cam_settings[5],
+		},
+	},
+#else
+	{
+		.gpio = 28, /* CAM2_RST_N */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &cam_settings[3],
+			[GPIOMUX_SUSPENDED] = &cam_settings[4],
+		},
+	},
+#endif
 	{
 		.gpio = 29, /* CCI_I2C_SDA0 */
 		.settings = {
@@ -617,12 +924,29 @@ static struct msm_gpiomux_config msm_sensor_configs[] __initdata = {
 		},
 	},
 	{
+		.gpio = 35, /* CAM2_STANDBY_N */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &cam_settings[3],
+			[GPIOMUX_SUSPENDED] = &cam_settings[4],
+		},
+	},	
+	{
 		.gpio = 36, /* CAM1_STANDBY_N */
 		.settings = {
 			[GPIOMUX_ACTIVE]    = &cam_settings[3],
 			[GPIOMUX_SUSPENDED] = &cam_settings[4],
 		},
 	},
+#ifdef CONFIG_HUAWEI_KERNEL
+	{
+
+		.gpio = 37, /* CAM1_RST_N */
+		.settings = {
+			[GPIOMUX_ACTIVE]    = &cam_settings[3],
+			[GPIOMUX_SUSPENDED] = &cam_settings[5],
+		},
+	},
+#else
 	{
 		.gpio = 37, /* CAM1_RST_N */
 		.settings = {
@@ -630,21 +954,7 @@ static struct msm_gpiomux_config msm_sensor_configs[] __initdata = {
 			[GPIOMUX_SUSPENDED] = &cam_settings[4],
 		},
 	},
-	{
-		.gpio = 35, /* CAM2_STANDBY_N */
-		.settings = {
-			[GPIOMUX_ACTIVE]    = &cam_settings[3],
-			[GPIOMUX_SUSPENDED] = &cam_settings[4],
-		},
-	},
-	{
-		.gpio = 28, /* CAM2_RST_N */
-		.settings = {
-			[GPIOMUX_ACTIVE]    = &cam_settings[3],
-			[GPIOMUX_SUSPENDED] = &cam_settings[4],
-		},
-	},
-
+#endif
 };
 
 static struct msm_gpiomux_config msm_sensor_configs_skuf_plus[] __initdata = {
@@ -663,7 +973,6 @@ static struct msm_gpiomux_config msm_sensor_configs_skuf_plus[] __initdata = {
 		},
 	},
 };
-
 
 static struct gpiomux_setting auxpcm_act_cfg = {
 	.func = GPIOMUX_FUNC_1,
@@ -875,5 +1184,8 @@ void __init msm8226_init_gpiomux(void)
 		msm_hsic_configs[1].gpio = 120; /* DATA */
 	}
 	msm_gpiomux_install(msm_hsic_configs, ARRAY_SIZE(msm_hsic_configs));
+#endif
+#ifdef CONFIG_HUAWEI_KERNEL
+	msm_gpiomux_install(msm_nc_gpio_configs, ARRAY_SIZE(msm_nc_gpio_configs));
 #endif
 }

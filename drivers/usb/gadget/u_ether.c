@@ -626,6 +626,7 @@ free_buf:
 	list_for_each(act, &dev->tx_reqs) {
 		req = container_of(act, struct usb_request, list);
 		kfree(req->buf);
+		/* merge patch from qcom, to fix mutli kfree */
 		req->buf = NULL;
 	}
 	return -ENOMEM;
@@ -1185,7 +1186,8 @@ void gether_disconnect(struct gether *link)
 		list_del(&req->list);
 
 		spin_unlock(&dev->req_lock);
-		if (link->multi_pkt_xfer) {
+		/* merge patch from qcom, to fix mutli kfree */
+		if (link->multi_pkt_xfer){
 			kfree(req->buf);
 			req->buf = NULL;
 		}

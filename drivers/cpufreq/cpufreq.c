@@ -1731,6 +1731,15 @@ static int __cpufreq_set_policy(struct cpufreq_policy *data,
 		goto error_out;
 	}
 
+#ifdef CONFIG_HUAWEI_KERNEL
+	if (policy->min < 787200) {
+		policy->min = 787200;
+	}
+	if (policy->max < 787200) {
+		policy->max = 787200;
+	}
+#endif
+
 	/* verify the cpu speed can be set within this limit */
 	ret = cpufreq_driver->verify(policy);
 	if (ret)

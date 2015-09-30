@@ -9,6 +9,17 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+
+#ifdef CONFIG_HUAWEI_KERNEL
+/* Open debug log for development version, will be closed after TR5 */
+#ifdef CONFIG_DYNAMIC_DEBUG
+#undef CONFIG_DYNAMIC_DEBUG
+#endif
+#ifndef DEBUG
+#define DEBUG
+#endif
+#endif
+
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/firmware.h>
@@ -243,7 +254,7 @@ static void wcd9xxx_start_hs_polling(struct wcd9xxx_mbhc *mbhc)
 
 	if (!mbhc->no_mic_headset_override &&
 	    mbhc_state == MBHC_STATE_POTENTIAL) {
-		pr_debug("%s recovering MBHC state machine\n", __func__);
+		pr_debug("%s huawei_audio: recovering MBHC state machine, skip VOLT setting\n", __func__);
 		mbhc->mbhc_state = MBHC_STATE_POTENTIAL_RECOVERY;
 		/* set to max button press threshold */
 		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B2_CTL, 0x7F);
@@ -315,6 +326,7 @@ static bool __wcd9xxx_switch_micbias(struct wcd9xxx_mbhc *mbhc,
 				      0xFF);
 
 			if (mbhc->mbhc_state != MBHC_STATE_POTENTIAL_RECOVERY) {
+				pr_debug("%s huawei_audio: MBHC not potential recovery, set VOLT\n", __func__);
 				/* Threshods for button press */
 				snd_soc_write(codec,
 					WCD9XXX_A_CDC_MBHC_VOLT_B3_CTL,
@@ -338,6 +350,10 @@ static bool __wcd9xxx_switch_micbias(struct wcd9xxx_mbhc *mbhc,
 					WCD9XXX_A_CDC_MBHC_VOLT_B10_CTL,
 					(d->v_brh[MBHC_V_IDX_VDDIO] >> 8) &
 					0xFF);
+			}
+			else
+			{
+				pr_debug("%s: huawei_audio MBHC potential recovery, skip VOLT\n", __func__);
 			}
 			pr_debug("%s: Programmed MBHC thresholds to VDDIO\n",
 				 __func__);
@@ -375,6 +391,7 @@ static bool __wcd9xxx_switch_micbias(struct wcd9xxx_mbhc *mbhc,
 					(d->v_ins_hu[MBHC_V_IDX_CFILT] >> 8) &
 					0xFF);
 			if (mbhc->mbhc_state != MBHC_STATE_POTENTIAL_RECOVERY) {
+				pr_debug("%s huawei_audio: MBHC not potential recovery, set VOLT\n", __func__);
 				/* Revert threshods for button press */
 				snd_soc_write(codec,
 					WCD9XXX_A_CDC_MBHC_VOLT_B3_CTL,
@@ -398,6 +415,10 @@ static bool __wcd9xxx_switch_micbias(struct wcd9xxx_mbhc *mbhc,
 					WCD9XXX_A_CDC_MBHC_VOLT_B10_CTL,
 					(d->v_brh[MBHC_V_IDX_CFILT] >> 8) &
 					0xFF);
+			}
+			else
+			{
+				pr_debug("%s: huawei_audio MBHC potential recovery, skip VOLT\n", __func__);
 			}
 			pr_debug("%s: Programmed MBHC thresholds to MICBIAS\n",
 					__func__);
@@ -498,6 +519,7 @@ static void wcd9xxx_calibrate_hs_polling(struct wcd9xxx_mbhc *mbhc)
 		      (v_ins_hu >> 8) & 0xFF);
 
 	if (mbhc->mbhc_state != MBHC_STATE_POTENTIAL_RECOVERY) {
+		pr_debug("%s: huawei_audio MBHC not potential recovery, set VOLT\n", __func__);
 		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B3_CTL, v_b1_hu &
 				0xFF);
 		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B4_CTL,
@@ -514,6 +536,10 @@ static void wcd9xxx_calibrate_hs_polling(struct wcd9xxx_mbhc *mbhc)
 				mbhc->mbhc_data.v_brl & 0xFF);
 		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B12_CTL,
 				(mbhc->mbhc_data.v_brl >> 8) & 0xFF);
+	}
+	else
+	{
+		pr_debug("%s: huawei_audio MBHC potential recovery, skip VOLT\n", __func__);
 	}
 }
 
@@ -1054,6 +1080,11 @@ static s32 __wcd9xxx_codec_sta_dce_v(struct wcd9xxx_mbhc *mbhc, s8 dce,
 		mv = (value - z) * (s32)micb_mv / (mb - z);
 	}
 
+#ifdef CONFIG_HUAWEI_KERNEL
+    pr_debug("%s: dce=%d, bias_value=%d, value=%d, z=%d, mb=%d, mv=%d", 
+        __func__, dce, bias_value, value, z, mb, mv);
+#endif
+
 	return mv;
 }
 
@@ -1478,6 +1509,9 @@ wcd9xxx_find_plug_type(struct wcd9xxx_mbhc *mbhc,
 	const s16 no_mic = plug_type->v_no_mic;
 
 	pr_debug("%s: event_state 0x%lx\n", __func__, event_state);
+#ifdef CONFIG_HUAWEI_KERNEL
+	pr_debug("%s: huawei_audio: no_mic=%d, hs_max=%d\n", __func__, no_mic, hs_max);
+#endif
 
 	for (i = 0, d = dt, ch = 0; i < size; i++, d++) {
 		vdce = wcd9xxx_codec_sta_dce_v(mbhc, true, d->dce);
@@ -3026,6 +3060,13 @@ static int wcd9xxx_determine_button(const struct wcd9xxx_mbhc *mbhc,
 						 MBHC_BTN_DET_V_BTN_HIGH);
 
 	for (i = 0; i < btn_det->num_btn; i++) {
+#ifdef CONFIG_HUAWEI_KERNEL
+		if (0 == i)
+		{
+			pr_debug("%s: huawei_audio: btn_low=%d, btn_high=%d\n",
+					__func__, v_btn_low[0], v_btn_high[0]);
+        }
+#endif
 		if ((v_btn_low[i] <= micmv) && (v_btn_high[i] >= micmv)) {
 			btn = i;
 			break;
@@ -3153,6 +3194,7 @@ static int wcd9xxx_update_rel_threshold(struct wcd9xxx_mbhc *mbhc, int ceilmv)
 		 * update LSB first so mbhc hardware block
 		 * doesn't see too low value.
 		 */
+		pr_debug("%s huawei_audio: MBHC not potential recovery, set VOLT\n", __func__);
 		v_b1_hu = wcd9xxx_codec_v_sta_dce(mbhc, STA, mv, false);
 		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B3_CTL, v_b1_hu &
 				0xFF);
@@ -3163,6 +3205,10 @@ static int wcd9xxx_update_rel_threshold(struct wcd9xxx_mbhc *mbhc, int ceilmv)
 				0xFF);
 		snd_soc_write(codec, WCD9XXX_A_CDC_MBHC_VOLT_B10_CTL,
 				(v_brh >> 8) & 0xFF);
+	}
+	else
+	{
+		pr_debug("%s: huawei_audio MBHC potential recovery, skip VOLT\n", __func__);
 	}
 	return 0;
 }
@@ -4609,6 +4655,10 @@ int wcd9xxx_mbhc_init(struct wcd9xxx_mbhc *mbhc, struct wcd9xxx_resmgr *resmgr,
 			mbhc->intr_ids->poll_plug_rem);
 		goto err_remove_irq;
 	}
+	/* because there is another remove irq handler, here disable remove irq */
+#ifdef CONFIG_HUAWEI_KERNEL
+	wcd9xxx_disable_irq(core_res, WCD9XXX_IRQ_MBHC_REMOVAL);
+#endif
 
 	ret = wcd9xxx_request_irq(core_res, mbhc->intr_ids->dce_est_complete,
 				  wcd9xxx_dce_handler, "DC Estimation detect",

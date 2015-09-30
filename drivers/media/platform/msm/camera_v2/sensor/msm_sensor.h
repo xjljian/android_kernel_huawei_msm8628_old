@@ -48,6 +48,10 @@ struct msm_sensor_fn_t {
 		(struct msm_sensor_ctrl_t *);
 	int (*sensor_power_up) (struct msm_sensor_ctrl_t *);
 	int32_t (*sensor_match_id)(struct msm_sensor_ctrl_t *s_ctrl);
+#ifdef CONFIG_HUAWEI_KERNEL_CAMERA
+	int (*sensor_match_module) (struct msm_sensor_ctrl_t *);
+	int (*sensor_write_otp) (struct msm_sensor_ctrl_t *);
+#endif
 };
 
 struct msm_sensor_ctrl_t {

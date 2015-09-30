@@ -363,10 +363,24 @@ static void msm_vfe32_reg_update(
 	msm_camera_io_w_mb(0xF, vfe_dev->vfe_base + 0x260);
 }
 
-static long msm_vfe32_reset_hardware(struct vfe_device *vfe_dev)
+static uint32_t msm_vfe32_reset_values[ISP_RST_MAX] = {
+    0x3FF, /* ISP_RST_HARD reset everything */
+    0x3FF  /* ISP_RST_SOFT same as HARD RESET */
+};
+
+static long msm_vfe32_reset_hardware(struct vfe_device *vfe_dev,
+	enum msm_isp_reset_type reset_type)
 {
+	uint32_t rst_val;
+
+	if (reset_type >= ISP_RST_MAX) {
+	    pr_err("%s: Error Invalid parameter\n", __func__);
+	    reset_type = ISP_RST_HARD;
+	}
+	rst_val = msm_vfe32_reset_values[reset_type];
+
 	init_completion(&vfe_dev->reset_complete);
-	msm_camera_io_w_mb(0x3FF, vfe_dev->vfe_base + 0x4);
+	msm_camera_io_w_mb(rst_val, vfe_dev->vfe_base + 0x4);
 	return wait_for_completion_interruptible_timeout(
 	   &vfe_dev->reset_complete, msecs_to_jiffies(50));
 }

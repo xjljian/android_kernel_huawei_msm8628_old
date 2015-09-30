@@ -145,7 +145,23 @@ config OV9724
 		preview and snapshot config at 1280*720 at 30 fps,
 		hfr video at 60, 90 and 120 fps. This sensor driver does
 		not support auto focus.
-
+		
+config HW_S5K4E1
+	bool "Huawei S5K4E1 5M"
+	depends on HUAWEI_KERNEL_CAMERA
+	---help---
+		Samsung 5 MP Bayer Sensor, supports 2 mipi lanes,
+		preview config = 1304*980 30 fps,
+		snapshot config = 2608 * 1960 at 15 fps.
+		This sensor driver does not support auto focus.
+config HW_OV5648
+	bool "Huawei OV5648 5M"
+	depends on HUAWEI_KERNEL_CAMERA
+	---help---
+		OmniVision 5 MP Bayer Sensor, only use 1 mipi lane,
+		preview set to 1296*972 at 30 fps,
+		snapshot set to 2592*1944 at 15 fps,
+		This sensor driver does not support auto focus.
 config HI256
         bool "Hynix hi256 (YUV 2MP)"
         depends on MSMB_CAMERA
@@ -162,6 +178,15 @@ config OV5648
 		OmniVision 5 MP Bayer Sensor, only use 1 mipi lane,
 		preview set to 1296*972 at 30 fps,
 		snapshot set to 2592*1944 at 12 fps,
+		This sensor driver does not support auto focus.
+
+config HW_HI542
+	bool "Sensor HW_HI542 (BAYER 5M)"
+	depends on HUAWEI_KERNEL_CAMERA
+	---help---
+		hynix 5 MP Bayer Sensor, supports 2 mipi lanes,
+		preview config = 1304*980 30 fps,
+		snapshot config = 2608 * 1960 at 15 fps.
 		This sensor driver does not support auto focus.
 
 config MT9M114
@@ -249,3 +274,9 @@ config MSM_GEMINI
 	depends on MSMB_CAMERA && (ARCH_MSM7X30 || ARCH_MSM8X60 || ARCH_MSM8960)
 	---help---
 	  Enables support for the Gemini JPEG encoder engine for 8x60.
+
+config HW_IMX135
+	bool "HUAWEI IMX135(SONY BSI 13M SENSOR)"
+	depends on  HUAWEI_KERNEL_CAMERA
+	---help---
+	  Sony 13 MP Bayer BSI Sensor.

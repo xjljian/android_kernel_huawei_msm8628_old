@@ -33,7 +33,9 @@
 #include "mdss_fb.h"
 #include "mdss_mdp.h"
 #include "mdss_mdp_rotator.h"
-
+#ifdef CONFIG_HUAWEI_KERNEL
+#include "mdss_dsi.h"
+#endif
 #define VSYNC_PERIOD 16
 #define BORDERFILL_NDX	0x0BF000BF
 #define CHECK_BOUNDS(offset, size, max_size) \
@@ -894,9 +896,11 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	int ret = 0;
 	int sd_in_pipe = 0;
 
-	if (ctl->shared_lock)
+	if (ctl->shared_lock){
+		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_BEGIN);
+		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_READY);
 		mutex_lock(ctl->shared_lock);
-
+	}
 	mutex_lock(&mdp5_data->ov_lock);
 	mutex_lock(&mfd->lock);
 
@@ -918,8 +922,8 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 		if (0 == mdss_mdp_overlay_sd_ctrl(mfd, 0))
 			mdp5_data->sd_enabled = 0;
 	}
-
-	mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_BEGIN);
+	if (!ctl->shared_lock)
+		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_BEGIN);
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
 
 	if (data)
@@ -2049,6 +2053,11 @@ static int mdss_fb_set_metadata(struct msm_fb_data_type *mfd,
 		ret = mdss_mdp_wb_set_format(mfd,
 				metadata->data.mixer_cfg.writeback_format);
 		break;
+#ifdef CONFIG_HUAWEI_KERNEL
+    case metadata_op_frame_rate:
+        ret = mdss_dsi_set_fps(metadata->data.panel_frame_rate);
+        break;
+#endif
 	default:
 		pr_warn("unsupported request to MDP META IOCTL\n");
 		ret = -EINVAL;

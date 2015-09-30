@@ -272,6 +272,50 @@ void mdss_enable_irq(struct mdss_hw *hw)
 }
 EXPORT_SYMBOL(mdss_enable_irq);
 
+void mdss_enable_mdp_clk(struct mdss_hw *hw)
+{
+	u32 ndx_bit;
+
+	if (hw->hw_ndx >= MDSS_MAX_HW_BLK)
+		return;
+
+	ndx_bit = BIT(hw->hw_ndx);
+
+	pr_debug("Enable HW=%d clk ena=%d mask=%x\n", hw->hw_ndx,
+			mdss_res->clk_ena, mdss_res->clk_mask);
+
+	if (mdss_res->clk_mask & ndx_bit) {
+		pr_debug("MDSS CLK HW ndx=%d is already set, mask=%x\n",
+				hw->hw_ndx, mdss_res->clk_mask);
+	} else {
+		mdss_res->clk_mask |= ndx_bit;
+		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
+	}
+}
+EXPORT_SYMBOL(mdss_enable_mdp_clk);
+
+void mdss_disable_mdp_clk(struct mdss_hw *hw)
+{
+	u32 ndx_bit;
+
+	if (hw->hw_ndx >= MDSS_MAX_HW_BLK)
+		return;
+
+	ndx_bit = BIT(hw->hw_ndx);
+
+	pr_debug("Disable HW=%d clk ena=%d mask=%x\n", hw->hw_ndx,
+			mdss_res->clk_ena, mdss_res->clk_mask);
+
+	if (!(mdss_res->clk_mask & ndx_bit)) {
+		pr_warn("MDSS CLK HW ndx=%d is NOT set, mask=%x\n",
+			hw->hw_ndx, mdss_res->clk_mask);
+	} else {
+		mdss_res->clk_mask &= ~ndx_bit;
+		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
+	}
+}
+EXPORT_SYMBOL(mdss_disable_mdp_clk);
+
 void mdss_disable_irq(struct mdss_hw *hw)
 {
 	unsigned long irq_flags;
