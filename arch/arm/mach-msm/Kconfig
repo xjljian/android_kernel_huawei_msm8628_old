@@ -3085,13 +3085,6 @@ config HUAWEI_KERNEL
 	bool "Use huawei code"
 	default n
 	help
-	  use huawei code
-	  
-config HUAWEI_DEBUG_MODE
-	bool "debug mode support"
-	depends on HUAWEI_KERNEL
-        default n
-	help
-	  in debug mode,you can use sysrq and dump mode 	 
+	  use huawei code	 
 
 endif
