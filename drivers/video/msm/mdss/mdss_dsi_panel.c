@@ -174,10 +174,6 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 	cmdreq.cb = NULL;
 
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
-
-#ifdef CONFIG_HUAWEI_LCD
-	LCD_LOG_DBG("%s: level=%d\n", __func__, level);
-#endif
 }
 #ifdef CONFIG_HUAWEI_LCD
 static void mdss_dsi_panel_bias_en(struct mdss_panel_data *pdata, int enable)
@@ -375,7 +371,7 @@ static int mdss_dsi_panel_cabc_ctrl(struct mdss_panel_data *pdata,struct msmfb_c
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 
 	if (pdata == NULL) {
-		LCD_LOG_ERR("%s: Invalid input data\n", __func__);
+		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
 	}
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
@@ -392,10 +388,10 @@ static int mdss_dsi_panel_cabc_ctrl(struct mdss_panel_data *pdata,struct msmfb_c
 				mdss_dsi_panel_cmds_send(ctrl_pdata, &ctrl_pdata->dsi_panel_cabc_video_cmds);
 			break;
 		default:
-			LCD_LOG_ERR("%s: invalid cabc mode: %d\n", __func__, cabc_cfg.mode);
+			pr_err("%s: invalid cabc mode: %d\n", __func__, cabc_cfg.mode);
 			break;
 	}
-	LCD_LOG_INFO("exit %s : CABC mode= %d\n",__func__,cabc_cfg.mode);
+	pr_info("%s: CABC mode=%d\n", __func__, cabc_cfg.mode);
 	return 0;
 }
 #endif
@@ -475,7 +471,6 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	}
     if (ctrl->on_cmds.cmd_cnt)
             mdss_dsi_panel_cmds_send(ctrl, &ctrl->on_cmds);
-	LCD_LOG_INFO("exit %s\n",__func__);
 #endif
 
 	pr_debug("%s:-\n", __func__);
@@ -502,9 +497,7 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	/* power off when panel off */
 	if (ctrl->off_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
-#ifdef CONFIG_HUAWEI_LCD
-	LCD_LOG_INFO("exit %s\n",__func__);
-#endif
+
 	pr_debug("%s:-\n", __func__);
 	return 0;
 }
@@ -1025,8 +1018,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	{
 		data = of_get_property(np, "huawei,panel-read-register", &len);
 		if ((!data) || (len != 2)) {
-			LCD_LOG_ERR("%s:%d, Unable to read panel read register settings",
-			       __func__, __LINE__);
+			pr_err("%s: Unable to read panel read register settings",
+			       __func__);
 			goto error;
 		}
 		read_dcs_cmd[0] = data[0];
