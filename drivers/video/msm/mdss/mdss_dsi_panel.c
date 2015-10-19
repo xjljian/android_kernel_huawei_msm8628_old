@@ -982,22 +982,6 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	for (i = 0; i < len; i++)
 		pinfo->mipi.dsi_phy_db.timing[i] = data[i];
 
-#ifdef CONFIG_HUAWEI_KERNEL
-	pinfo->huawei_dynamic_fps = of_property_read_bool(np,
-					  "huawei,mdss-dsi-pan-enable-dynamic-fps");
-	if (pinfo->huawei_dynamic_fps) {
-		data = of_get_property(np, "huawei,mdss-dsi-panel-timings-30-fps", &len);
-		if ((!data) || (len != 12)) {
-			pr_err("%s:%d, Unable to read Phy timing settings",
-			       __func__, __LINE__);
-			goto error;
-		}
-		for (i = 0; i < len; i++)
-		{
-			pinfo->mipi.dsi_phy_db.timing_30_fps[i] = data[i];
-		}
-	}
-#endif
 	mdss_dsi_parse_fbc_params(np, pinfo);
 
 	mdss_dsi_parse_reset_seq(np, pinfo->rst_seq, &(pinfo->rst_seq_len),

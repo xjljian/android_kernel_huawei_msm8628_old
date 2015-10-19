@@ -442,11 +442,4 @@ void mdss_dsi_cmdlist_kickoff(int intf);
 int mdss_dsi_panel_init(struct device_node *node,
 		struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 		bool cmd_cfg_cont_splash);
-
-#ifdef CONFIG_HUAWEI_KERNEL
-void mdss_change_fps(void);
-int mdss_dsi_wait4video_done_ret(struct mdss_dsi_ctrl_pdata *ctrl);
-int mdss_dsi_set_fps(int frame_rate);
-#endif
-
 #endif /* MDSS_DSI_H */

@@ -2053,11 +2053,6 @@ static int mdss_fb_set_metadata(struct msm_fb_data_type *mfd,
 		ret = mdss_mdp_wb_set_format(mfd,
 				metadata->data.mixer_cfg.writeback_format);
 		break;
-#ifdef CONFIG_HUAWEI_KERNEL
-    case metadata_op_frame_rate:
-        ret = mdss_dsi_set_fps(metadata->data.panel_frame_rate);
-        break;
-#endif
 	default:
 		pr_warn("unsupported request to MDP META IOCTL\n");
 		ret = -EINVAL;
