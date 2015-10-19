@@ -359,10 +359,6 @@ struct mdss_dsi_ctrl_pdata {
 	struct dsi_panel_cmds on_cmds;
 	struct dsi_panel_cmds off_cmds;
 
-#ifdef CONFIG_FB_AUTO_CABC
-	struct dsi_panel_cmds dsi_panel_cabc_ui_cmds;
-	struct dsi_panel_cmds dsi_panel_cabc_video_cmds;
-#endif
 	struct dcs_cmd_list cmdlist;
 	struct completion dma_comp;
 	struct completion mdp_comp;

@@ -27,7 +27,3 @@ config HUAWEI_LCD
 	default n
 	---help---
 	  use huawei feature
-config FB_AUTO_CABC
-	bool "Support for AUTO_CABC fuction"
-	depends on HUAWEI_LCD
-	default n

@@ -359,36 +359,6 @@ static int mdss_dsi_panel_partial_update(struct mdss_panel_data *pdata)
 	return rc;
 }
 
-#ifdef CONFIG_FB_AUTO_CABC
-static int mdss_dsi_panel_cabc_ctrl(struct mdss_panel_data *pdata,struct msmfb_cabc_config cabc_cfg)
-{
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-
-	if (pdata == NULL) {
-		pr_err("%s: Invalid input data\n", __func__);
-		return -EINVAL;
-	}
-	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
-				panel_data);
-	switch(cabc_cfg.mode)
-	{
-		case CABC_MODE_UI:
-			if (ctrl_pdata->dsi_panel_cabc_ui_cmds.cmd_cnt)
-				mdss_dsi_panel_cmds_send(ctrl_pdata, &ctrl_pdata->dsi_panel_cabc_ui_cmds);
-			break;
-		case CABC_MODE_MOVING:
-		case CABC_MODE_STILL:
-			if (ctrl_pdata->dsi_panel_cabc_video_cmds.cmd_cnt)
-				mdss_dsi_panel_cmds_send(ctrl_pdata, &ctrl_pdata->dsi_panel_cabc_video_cmds);
-			break;
-		default:
-			pr_err("%s: invalid cabc mode: %d\n", __func__, cabc_cfg.mode);
-			break;
-	}
-	pr_info("%s: CABC mode=%d\n", __func__, cabc_cfg.mode);
-	return 0;
-}
-#endif
 static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 							u32 bl_level)
 {
@@ -981,12 +951,6 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->off_cmds,
 		"qcom,mdss-dsi-off-command", "qcom,mdss-dsi-off-command-state");
 
-#ifdef CONFIG_FB_AUTO_CABC
-	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dsi_panel_cabc_ui_cmds,
-		"qcom,panel-cabc-ui-cmds", "qcom,cabc-ui-cmds-dsi-state");
-	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dsi_panel_cabc_video_cmds,
-		"qcom,panel-cabc-video-cmds", "qcom,cabc-video-cmds-dsi-state");
-#endif
 	return 0;
 
 error:
@@ -1027,10 +991,6 @@ int mdss_dsi_panel_init(struct device_node *node,
 		pr_err("%s:%d panel dt parse failed\n", __func__, __LINE__);
 		return rc;
 	}
-
-#ifdef CONFIG_FB_AUTO_CABC
-	ctrl_pdata->panel_data.config_cabc = mdss_dsi_panel_cabc_ctrl;
-#endif
 
 	if (cmd_cfg_cont_splash)
 		cont_splash_enabled = of_property_read_bool(node,

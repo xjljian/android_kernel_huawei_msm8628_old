@@ -326,9 +326,6 @@ struct mdss_panel_data {
 	int (*event_handler) (struct mdss_panel_data *pdata, int e, void *arg);
 
 	struct mdss_panel_data *next;
-#ifdef CONFIG_FB_AUTO_CABC
-	int (*config_cabc) (struct mdss_panel_data *pdata,struct msmfb_cabc_config cabc_cfg);
-#endif
 };
 
 /**
