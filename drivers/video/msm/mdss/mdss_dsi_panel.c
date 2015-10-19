@@ -987,10 +987,6 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->dsi_panel_cabc_video_cmds,
 		"qcom,panel-cabc-video-cmds", "qcom,cabc-video-cmds-dsi-state");
 #endif
-#ifdef CONFIG_HUAWEI_LCD
-	rc = of_property_read_u32(np, "huawei,delaytime-before-bl", &tmp);
-	pinfo->delaytime_before_bl = (!rc ? tmp : 0);
-#endif
 	return 0;
 
 error:
