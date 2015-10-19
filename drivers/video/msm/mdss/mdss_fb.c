@@ -52,7 +52,6 @@
 #include <mach/msm_memtypes.h>
 
 #include "mdss_fb.h"
-#include <linux/hw_lcd_common.h>
 
 #ifdef CONFIG_HUAWEI_KERNEL
 #include "mdss_dsi.h"
