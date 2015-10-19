@@ -151,8 +151,6 @@ static struct dsi_cmd_desc backlight_cmd = {
 	led_pwm1
 };
 
-/* add backlight control log */
-/* add dynamic log */
 static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 {
 	struct dcs_cmd_req cmdreq;
@@ -256,15 +254,16 @@ void mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		pr_debug("%s:%d, reset line not configured\n",
 			   __func__, __LINE__);
 	}
-	
+
 	if (!gpio_is_valid(ctrl_pdata->rst_gpio)) {
 		pr_debug("%s:%d, reset line not configured\n",
 			   __func__, __LINE__);
 		return;
 	}
+
 	pr_debug("%s: enable = %d\n", __func__, enable);
 	pinfo = &(ctrl_pdata->panel_data.panel_info);
-/* reset lcd when power on */
+
 	if (enable) {
 	#ifndef CONFIG_HUAWEI_LCD		
 		if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
@@ -428,8 +427,7 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 		break;
 	}
 }
-/* only transmit 11 29 when power on */
-/* add dynamic log */
+
 static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 {
 	struct mipi_panel_info *mipi;
@@ -484,13 +482,13 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 
 	mipi  = &pdata->panel_info.mipi;
 
-	/* power off when panel off */
 	if (ctrl->off_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
 
 	pr_debug("%s:-\n", __func__);
 	return 0;
 }
+
 
 static int mdss_dsi_parse_dcs_cmds(struct device_node *np,
 		struct dsi_panel_cmds *pcmds, char *cmd_key, char *link_key)

@@ -785,6 +785,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 	default:
 		if (mfd->panel_power_on && mfd->mdp.off_fnc) {
 			int curr_pwr_state;
+
 			mutex_lock(&mfd->update.lock);
 			mfd->update.type = NOTIFY_TYPE_SUSPEND;
 			mutex_unlock(&mfd->update.lock);
@@ -2061,7 +2062,6 @@ static int mdss_fb_display_commit(struct fb_info *info,
 }
 
 
-/* use dynamic log */
 static int mdss_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			 unsigned long arg)
 {
@@ -2205,6 +2205,7 @@ static int mdss_fb_register_extra_panel(struct platform_device *pdev,
 
 	return 0;
 }
+
 int mdss_register_panel(struct platform_device *pdev,
 	struct mdss_panel_data *pdata)
 {

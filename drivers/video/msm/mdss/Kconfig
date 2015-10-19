@@ -31,4 +31,3 @@ config FB_AUTO_CABC
 	bool "Support for AUTO_CABC fuction"
 	depends on HUAWEI_LCD
 	default n
-#//remove dynamic gamma

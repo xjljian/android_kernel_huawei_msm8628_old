@@ -1441,8 +1441,8 @@ int dsi_panel_device_register(struct device_node *pan_node,
 			ctrl_pdata->pclk_rate, ctrl_pdata->byte_clk_rate);
 
 	ctrl_pdata->ctrl_state = CTRL_STATE_UNKNOWN;
-	/* open cont_splash_enable in dtsi file */
-		if (pinfo->cont_splash_enabled) {
+
+	if (pinfo->cont_splash_enabled) {
 		pinfo->panel_power_on = 1;
 		rc = mdss_dsi_panel_power_on(&(ctrl_pdata->panel_data), 1);
 		if (rc) {

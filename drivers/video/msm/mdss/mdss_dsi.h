@@ -310,6 +310,7 @@ enum {
 #define DSI_EV_PLL_UNLOCKED		0x0001
 #define DSI_EV_MDP_FIFO_UNDERFLOW	0x0002
 #define DSI_EV_MDP_BUSY_RELEASE		0x80000000
+
 struct mdss_dsi_ctrl_pdata {
 	int ndx;	/* panel_num */
 	int (*on) (struct mdss_panel_data *pdata);
@@ -361,8 +362,6 @@ struct mdss_dsi_ctrl_pdata {
 #ifdef CONFIG_FB_AUTO_CABC
 	struct dsi_panel_cmds dsi_panel_cabc_ui_cmds;
 	struct dsi_panel_cmds dsi_panel_cabc_video_cmds;
-
-//remove dynamic gamma
 #endif
 	struct dcs_cmd_list cmdlist;
 	struct completion dma_comp;
@@ -380,6 +379,7 @@ struct mdss_dsi_ctrl_pdata {
 	int bl_en_gpio;
 #endif
 };
+
 int dsi_panel_device_register(struct device_node *pan_node,
 				struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 
