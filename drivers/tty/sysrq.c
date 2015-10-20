@@ -66,14 +66,8 @@ static bool sysrq_on_mask(int mask)
 
 static int __init sysrq_always_enabled_setup(char *str)
 {
-#ifdef CONFIG_HUAWEI_KERNEL
-	/* make sure sysrq_always_enabled is zero, then enable state depends on by sysrq_enabled */
-	sysrq_always_enabled = false;
-	pr_info("sysrq_always_enabled is ignored, sysrq depends on sysrq_enabled\n");
-#else
 	sysrq_always_enabled = true;
 	pr_info("sysrq always enabled.\n");
-#endif
 
 	return 1;
 }
