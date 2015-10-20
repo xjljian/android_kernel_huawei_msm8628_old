@@ -1,7 +1,0 @@
-
-
-/include/ "cmi-otm1282a-5p5-720p-cmd.dtsi"
-/include/ "tianma-nt35520-5p5-720p-cmd.dtsi"
-/include/ "boe-nt35520-5p5-720p-cmd.dtsi"
-
-/include/ "default_lcd.dtsi"
