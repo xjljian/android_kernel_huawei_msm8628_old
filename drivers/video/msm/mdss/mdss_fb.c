@@ -403,10 +403,7 @@ static int mdss_fb_probe(struct platform_device *pdev)
 		mfd->mdp_sync_pt_data.threshold = 1;
 	else
 		mfd->mdp_sync_pt_data.threshold = 2;
-#if defined(CONFIG_HUAWEI_KERNEL) && defined(CONFIG_DEBUG_FS)
-	/* init lcd debugfs interface */
-	lcd_debugfs_init();
-#endif
+
 	return rc;
 }
 
