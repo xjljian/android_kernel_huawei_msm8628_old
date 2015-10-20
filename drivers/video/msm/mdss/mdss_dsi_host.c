@@ -26,7 +26,6 @@
 #include "mdss.h"
 #include "mdss_dsi.h"
 #include "mdss_panel.h"
-#include "mdss_mdp.h"
 
 #define VSYNC_PERIOD 17
 

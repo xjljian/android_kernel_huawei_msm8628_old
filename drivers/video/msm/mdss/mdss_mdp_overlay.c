@@ -33,9 +33,7 @@
 #include "mdss_fb.h"
 #include "mdss_mdp.h"
 #include "mdss_mdp_rotator.h"
-#ifdef CONFIG_HUAWEI_KERNEL
-#include "mdss_dsi.h"
-#endif
+
 #define VSYNC_PERIOD 16
 #define BORDERFILL_NDX	0x0BF000BF
 #define CHECK_BOUNDS(offset, size, max_size) \
