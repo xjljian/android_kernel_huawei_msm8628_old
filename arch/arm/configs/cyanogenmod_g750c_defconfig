@@ -1294,7 +1294,6 @@ CONFIG_HUAWEI_HALL_MRMS501A=y
 # Altera FPGA firmware download module
 #
 # CONFIG_ALTERA_STAPL is not set
-CONFIG_HUAWEI_APANIC=y
 
 #
 # SCSI device support
