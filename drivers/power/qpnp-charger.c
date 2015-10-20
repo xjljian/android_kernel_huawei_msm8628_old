@@ -2050,25 +2050,6 @@ get_prop_battery_voltage_now(struct qpnp_chg_chip *chip)
 	}
 }
 
-/* not use this feature*/
-#if 0
-static int
-get_prop_battery_voltage_now_userspace(struct qpnp_chg_chip *chip)
-{
-	union power_supply_propval ret = {0,};
-
-	if (chip->bms_psy) {
-		chip->bms_psy->get_property(chip->bms_psy,
-				POWER_SUPPLY_PROP_VOLTAGE_NOW, &ret);
-		return ret.intval;
-	} else {
-		pr_debug("No BMS supply registered return 0\n");
-	}
-
-	return get_prop_battery_voltage_now(chip);
-}
-#endif
-
 #define BATT_PRES_BIT BIT(7)
 static int
 get_prop_batt_present(struct qpnp_chg_chip *chip)
@@ -2366,6 +2347,7 @@ get_prop_capacity(struct qpnp_chg_chip *chip)
 	 * from shutting down unecessarily */
 	return DEFAULT_CAPACITY;
 }
+
 #define DEFAULT_TEMP		250
 #define MAX_TOLERABLE_BATT_TEMP_DDC	680
 static int
@@ -2558,16 +2540,9 @@ qpnp_batt_power_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN:
 		val->intval = chip->min_voltage_mv * 1000;
 		break;
-	/* not use this feature */
-#if 0
-	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		val->intval = get_prop_battery_voltage_now_userspace(chip);
-		break;
-#else
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 		val->intval = get_prop_battery_voltage_now(chip);
 		break;
-#endif
 	case POWER_SUPPLY_PROP_VOLTAGE_OCV:
 		val->intval = chip->insertion_ocv_uv;
 		break;
