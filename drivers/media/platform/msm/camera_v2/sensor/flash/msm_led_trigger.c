@@ -15,9 +15,6 @@
 
 #include <linux/module.h>
 #include "msm_led_flash.h"
-#ifdef CONFIG_HUAWEI_HW_DEV_DCT
-#include <linux/hw_dev_dec.h>
-#endif
 
 #define FLASH_NAME "camera-led-flash"
 
@@ -310,14 +307,9 @@ torch_failed:
 	}
 
 	rc = msm_led_flash_create_v4lsubdev(pdev, &fctrl);
-
 	if (!rc)
 		msm_led_torch_create_classdev(pdev, &fctrl);
 
-#ifdef CONFIG_HUAWEI_HW_DEV_DCT
-	set_hw_dev_flag(DEV_I2C_FLASH);
-#endif
-	
 	return rc;
 }
 
