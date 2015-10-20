@@ -16,7 +16,6 @@
 
 #include <linux/platform_device.h>
 #include <linux/types.h>
-#include <linux/msm_mdp.h>
 
 /* panel id type */
 struct panel_id {
