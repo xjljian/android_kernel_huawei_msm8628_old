@@ -3843,7 +3843,6 @@ static int64_t read_battery_id(struct qpnp_bms_chip *chip)
 	return result.physical;
 }
 
-//remove huawei battery id solution
 static int set_battery_data(struct qpnp_bms_chip *chip)
 {
 	int64_t battery_id;
@@ -3951,7 +3950,6 @@ assign_data:
 
 	return 0;
 }
-//remove huawei battery id solution
 
 static int bms_get_adc(struct qpnp_bms_chip *chip,
 					struct spmi_device *spmi)
