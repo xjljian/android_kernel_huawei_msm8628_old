@@ -221,49 +221,10 @@
 #define KPDBL_MODULE_EN			0x80
 #define KPDBL_MODULE_DIS		0x00
 #define KPDBL_MODULE_EN_MASK		0x80
-/* Add dynamic_log interface */
-#define LED_ERR  1
-#define LED_INFO 2
-#define LED_DBG  3
 
 //only one task can control led
 static struct mutex hw_led_lock;
 
-int led_debug_mask = LED_INFO ;
-module_param_named(led_debug_mask, led_debug_mask, int, 0664);
-
-#ifndef LED_LOG_ERR
-#define LED_LOG_ERR( x...)					\
-do{											\
-	if( led_debug_mask >= LED_ERR )			\
-	{										\
-		printk(KERN_ERR "[LED_ERR] " x);	\
-	}										\
-											\
-}while(0)
-#endif
-
-#ifndef LED_LOG_INFO
-#define LED_LOG_INFO( x...)					\
-do{											\
-	if( led_debug_mask >= LED_INFO )		\
-	{										\
-		printk(KERN_ERR "[LED_INFO] " x);	\
-	}										\
-											\
-}while(0)
-#endif
-
-#ifndef LED_LOG_DBG
-#define LED_LOG_DBG( x...)					\
-do{											\
-	if( led_debug_mask >= LED_DBG )			\
-	{										\
-		printk(KERN_ERR "[LED_DBG] " x);	\
-	}										\
-											\
-}while(0)
-#endif
 /**
  * enum qpnp_leds - QPNP supported led ids
  * @QPNP_ID_WLED - White led backlight
@@ -519,7 +480,6 @@ struct qpnp_led_data {
 	u8			reg;
 	u8			num_leds;
 	struct mutex		lock;
-	/*Removed spin locking*/
 	struct wled_config_data *wled_cfg;
 	struct flash_config_data	*flash_cfg;
 	struct kpdbl_config_data	*kpdbl_cfg;
@@ -733,14 +693,11 @@ static int qpnp_wled_set(struct qpnp_led_data *led)
 	}
 	return 0;
 }
-/* add the log dynamic control */
+
 static int qpnp_mpp_set(struct qpnp_led_data *led)
 {
 	int rc, val;
 	int duty_us;
-
-	LED_LOG_DBG(" %s begin, brightness:%d \n ", __func__, led->cdev.brightness);
-	LED_LOG_DBG(" led base add:0x%x \n", led->base);
 
 	if (led->cdev.brightness) {
 		if (led->cdev.brightness < led->mpp_cfg->min_brightness) {
@@ -783,61 +740,60 @@ static int qpnp_mpp_set(struct qpnp_led_data *led)
 		else {
 			led->mpp_cfg->configuring_blinking = 0;
 #endif
-			if (led->mpp_cfg->pwm_mode == PWM_MODE) {
-				pwm_disable(led->mpp_cfg->pwm_cfg->pwm_dev);
-				duty_us = (led->mpp_cfg->pwm_cfg->pwm_period_us *
-					   led->cdev.brightness) / LED_FULL;
-				/*config pwm for brightness scaling*/
-				rc = pwm_config(led->mpp_cfg->pwm_cfg->pwm_dev,
-						duty_us,
-						led->mpp_cfg->pwm_cfg->pwm_period_us);
-				if (rc < 0) {
-					dev_err(&led->spmi_dev->dev, "Failed to " \
-						"configure pwm for new values\n");
-					return rc;
-				}
-			}
-
-			if (led->mpp_cfg->pwm_mode != MANUAL_MODE)
-				pwm_enable(led->mpp_cfg->pwm_cfg->pwm_dev);
-			else {
-				if (led->cdev.brightness < LED_MPP_CURRENT_MIN)
-					led->cdev.brightness = LED_MPP_CURRENT_MIN;
-
-				val = (led->cdev.brightness / LED_MPP_CURRENT_MIN) - 1;
-
-				rc = qpnp_led_masked_write(led,
-							   LED_MPP_SINK_CTRL(led->base),
-							   LED_MPP_SINK_MASK, val);
-				if (rc) {
-					dev_err(&led->spmi_dev->dev,
-						"Failed to write sink control reg\n");
-					return rc;
-				}
-			}
-
-			val = (led->mpp_cfg->source_sel & LED_MPP_SRC_MASK) |
-				(led->mpp_cfg->mode_ctrl & LED_MPP_MODE_CTRL_MASK);
-
-			LED_LOG_DBG(" %s blink! \n", __func__);
-			rc = qpnp_led_masked_write(led,
-						   LED_MPP_MODE_CTRL(led->base), LED_MPP_MODE_MASK,
-						   val);
-			if (rc) {
-				dev_err(&led->spmi_dev->dev,
-					"Failed to write led mode reg\n");
+		if (led->mpp_cfg->pwm_mode == PWM_MODE) {
+			pwm_disable(led->mpp_cfg->pwm_cfg->pwm_dev);
+			duty_us = (led->mpp_cfg->pwm_cfg->pwm_period_us *
+					led->cdev.brightness) / LED_FULL;
+			/*config pwm for brightness scaling*/
+			rc = pwm_config(led->mpp_cfg->pwm_cfg->pwm_dev,
+					duty_us,
+					led->mpp_cfg->pwm_cfg->pwm_period_us);
+			if (rc < 0) {
+				dev_err(&led->spmi_dev->dev, "Failed to " \
+					"configure pwm for new values\n");
 				return rc;
 			}
+		}
+
+		if (led->mpp_cfg->pwm_mode != MANUAL_MODE)
+			pwm_enable(led->mpp_cfg->pwm_cfg->pwm_dev);
+		else {
+			if (led->cdev.brightness < LED_MPP_CURRENT_MIN)
+				led->cdev.brightness = LED_MPP_CURRENT_MIN;
+
+			val = (led->cdev.brightness / LED_MPP_CURRENT_MIN) - 1;
 
 			rc = qpnp_led_masked_write(led,
-						   LED_MPP_EN_CTRL(led->base), LED_MPP_EN_MASK,
-						   LED_MPP_EN_ENABLE);
+					LED_MPP_SINK_CTRL(led->base),
+					LED_MPP_SINK_MASK, val);
 			if (rc) {
 				dev_err(&led->spmi_dev->dev,
+					"Failed to write sink control reg\n");
+				return rc;
+			}
+		}
+
+		val = (led->mpp_cfg->source_sel & LED_MPP_SRC_MASK) |
+			(led->mpp_cfg->mode_ctrl & LED_MPP_MODE_CTRL_MASK);
+
+		rc = qpnp_led_masked_write(led,
+			LED_MPP_MODE_CTRL(led->base), LED_MPP_MODE_MASK,
+			val);
+		if (rc) {
+			dev_err(&led->spmi_dev->dev,
+					"Failed to write led mode reg\n");
+			return rc;
+		}
+
+		rc = qpnp_led_masked_write(led,
+				LED_MPP_EN_CTRL(led->base), LED_MPP_EN_MASK,
+				LED_MPP_EN_ENABLE);
+		if (rc) {
+			dev_err(&led->spmi_dev->dev,
 					"Failed to write led enable " \
 					"reg\n");
-				return rc;
-			}
+			return rc;
+		}
 #ifdef CONFIG_HUAWEI_KERNEL
 		}
 #endif
@@ -876,6 +832,7 @@ static int qpnp_mpp_set(struct qpnp_led_data *led)
 
 	return 0;
 }
+
 static int qpnp_flash_regulator_operate(struct qpnp_led_data *led, bool on)
 {
 	int rc, i;
@@ -1069,6 +1026,7 @@ static int qpnp_flash_set(struct qpnp_led_data *led)
 					rc);
 				goto error_reg_write;
 			}
+
 			rc = qpnp_led_masked_write(led,
 				FLASH_ENABLE_CONTROL(led->base),
 				FLASH_ENABLE_MASK,
@@ -1438,11 +1396,11 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 	return 0;
 }
 
-/*deleted*/
 static void qpnp_led_set(struct led_classdev *led_cdev,
 				enum led_brightness value)
 {
 	struct qpnp_led_data *led;
+
 	led = container_of(led_cdev, struct qpnp_led_data, cdev);
 	if (value < LED_OFF) {
 		dev_err(&led->spmi_dev->dev, "Invalid brightness value\n");
@@ -1451,6 +1409,7 @@ static void qpnp_led_set(struct led_classdev *led_cdev,
 
 	if (value > led->cdev.max_brightness)
 		value = led->cdev.max_brightness;
+
 	led->cdev.brightness = value;
 	if (led->mpp_cfg && !led->cdev.brightness) {
 		if (led->mpp_cfg->pwm_cfg) {
@@ -1467,10 +1426,7 @@ static void __qpnp_led_work(struct qpnp_led_data *led,
 {
 	int rc;
 
-	LED_LOG_DBG("__qpnp_led_work start!led id:%d \n", led->id);
-
 	mutex_lock(&led->lock);
-	/*remove the code to qpnp_led_set according to 1.0 ES6 baseline*/
 
 	switch (led->id) {
 	case QPNP_ID_WLED:
@@ -1495,7 +1451,6 @@ static void __qpnp_led_work(struct qpnp_led_data *led,
 				"RGB set brightness failed (%d)\n", rc);
 		break;
 	case QPNP_ID_LED_MPP:
-		/*deleted*/
 		rc = qpnp_mpp_set(led);
 		if (rc < 0)
 			dev_err(&led->spmi_dev->dev,
