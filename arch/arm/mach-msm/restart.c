@@ -60,12 +60,6 @@
 #define use_restart_v2()	0
 #endif
 
-#ifdef CONFIG_HUAWEI_KERNEL
-#define RESTART_FLAG_ADDR    0x800
-#define RESTART_FLAG_MAGIC_NUM    0x20890206
-#define restart_flag_addr     (MSM_IMEM_BASE + RESTART_FLAG_ADDR)
-#endif
-
 static int restart_mode;
 void *restart_reason;
 
@@ -274,9 +268,6 @@ static void msm_restart_prepare(const char *cmd)
 		set_dload_mode(0);
 #endif
 
-#ifdef CONFIG_HUAWEI_KERNEL
-	__raw_writel(RESTART_FLAG_MAGIC_NUM, restart_flag_addr);
-#endif
 	pm8xxx_reset_pwr_off(1);
 
 	/* Hard reset the PMIC unless memory contents must be maintained. */
@@ -296,18 +287,6 @@ static void msm_restart_prepare(const char *cmd)
 			__raw_writel(0x6f656d00 | code, restart_reason);
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
-#ifdef CONFIG_HUAWEI_KERNEL
-		} else if (!strncmp(cmd, "huawei_dload", 12)) {
-			__raw_writel(0x77665503, restart_reason);
-#endif
-#ifdef CONFIG_HUAWEI_KERNEL
-		}  else if (!strncmp(cmd, "huawei_rtc", 10)) {
-					   __raw_writel(0x77665524, restart_reason);
-#endif
-#ifdef CONFIG_HUAWEI_KERNEL
-		}  else if (!strncmp(cmd, "emergency_restart", 17)) {
-			printk("do nothing\n");
-#endif
 		} else {
 			__raw_writel(0x77665501, restart_reason);
 		}
