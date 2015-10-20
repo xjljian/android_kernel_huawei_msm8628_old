@@ -718,7 +718,6 @@ static int qpnp_mpp_set(struct qpnp_led_data *led)
 		}
 #else
 		if(led->mpp_cfg->configuring_blinking == 0) {
-			LED_LOG_DBG(" %s no blink!\n", __func__);
 			rc = qpnp_led_masked_write(led,
 					LED_MPP_MODE_CTRL(led->base), LED_MPP_MODE_MASK,
 					0x61);
@@ -2238,8 +2237,6 @@ static ssize_t led_blink_show(struct device *dev,
 	struct qpnp_led_data *led = NULL;
 	struct led_classdev *led_cdev = dev_get_drvdata(dev);
 
-	LED_LOG_DBG(" %s start!\n", __func__);
-
 	led = container_of(led_cdev, struct qpnp_led_data, cdev);
 	return snprintf(buf,PAGE_SIZE,
 			"COMMAND:echo [onMS] [offMS] > /sys/class/leds/[color]/blink\n");
@@ -2264,7 +2261,6 @@ static char *led_calculate_duty(int on_ms, int off_ms, int *ramp_ms)
 	/*PMIC cant support so high Ramp*/
 	if(*ramp_ms > 499) {
 		on_ms = off_ms = 0;
-		LED_LOG_ERR("%s: ramp %d is too High, cant blink\n",__func__, *ramp_ms);
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -2277,7 +2273,6 @@ static char *led_calculate_duty(int on_ms, int off_ms, int *ramp_ms)
 	n = sizeof(char)*( (on_ptr * 3) + (off_ptr * 2) + 1);
 	duty_pct = kzalloc(n, GFP_KERNEL);
 	if (!duty_pct) {
-		LED_LOG_ERR("%s:Unable to allocate memory\n",__func__);
 		return ERR_PTR(-ENOMEM);
 	}
 
@@ -2294,7 +2289,6 @@ static char *led_calculate_duty(int on_ms, int off_ms, int *ramp_ms)
 		strncat(duty_pct,",0", n - sizeof(duty_pct));
 	}
 
-	LED_LOG_DBG("%s: duty=%s\n",__func__, duty_pct);
 	return duty_pct;
 }
 
@@ -2313,16 +2307,13 @@ static ssize_t led_blink_store(struct device *dev,
 
 	/*if the blue led blink, the function will be back .*/
 	if (0 == strcmp("blue", led_cdev->name)) {
-		LED_LOG_DBG("%s: LED not supported\n", __func__);
 		return size;
 	}
 
-	LED_LOG_DBG(" %s start!\n", __func__);
 	led = container_of(led_cdev, struct qpnp_led_data, cdev);
 	rc = sscanf(buf,"%d %d",&on_ms,&off_ms);
 	if (2 != rc) {
 		on_ms = off_ms = 0;
-		LED_LOG_ERR("%s: para error ret = %d, turn of the blink!\n",__func__,rc);
 	}
 
 	if (on_ms <= 0 || off_ms <= 0) {
@@ -2338,7 +2329,6 @@ static ssize_t led_blink_store(struct device *dev,
 		duty_pct = led_calculate_duty(on_ms,off_ms, &ramp_ms);
 		if (IS_ERR_OR_NULL(duty_pct)) {
 			/*if error happen then memory will be deallocated in function itself*/
-			LED_LOG_ERR("%s:Unable to allocate memory\n",__func__);
 			error = -EINVAL;
 			goto error;
 		}
@@ -2349,7 +2339,6 @@ static ssize_t led_blink_store(struct device *dev,
 		rc = duty_pcts_store(dev, NULL, duty_pct, length);
 		kfree(duty_pct);
 		if (rc != length) {
-			LED_LOG_ERR("%s: duty_pct store failed, rc= %d\n",__func__, rc);
 			error = -EINVAL;
 			goto error;
 		}
