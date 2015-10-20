@@ -691,9 +691,12 @@ enum iris_xfr_t {
 	IRIS_XFR_MAX
 };
 
-
 #undef FMDBG
-#define FMDBG(fmt, args...) pr_info("iris_radio: " fmt, ##args);
+#ifdef FM_DEBUG
+#define FMDBG(fmt, args...) pr_info("iris_radio: " fmt, ##args)
+#else
+#define FMDBG(fmt, args...)
+#endif
 
 #undef FMDERR
 #define FMDERR(fmt, args...) pr_err("iris_radio: " fmt, ##args)
