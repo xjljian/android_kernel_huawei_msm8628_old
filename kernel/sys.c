@@ -85,8 +85,6 @@
 # define SET_TSC_CTL(a)		(-EINVAL)
 #endif
 
-#define hw_dbg(x...)
-
 /*
  * this is where the system-wide overflow UID and GID are defined, for
  * architectures that now have 32-bit UID/GID but didn't in the past
@@ -319,14 +317,10 @@ EXPORT_SYMBOL_GPL(emergency_restart);
 void kernel_restart_prepare(char *cmd)
 {
 	blocking_notifier_call_chain(&reboot_notifier_list, SYS_RESTART, cmd);
-	hw_dbg("blocking_notifier_call_chain done\n");
 	system_state = SYSTEM_RESTART;
 	usermodehelper_disable();
-	hw_dbg("usermodehelper_disable done\n");
 	device_shutdown();
-	hw_dbg("device_shutdown done\n");
 	syscore_shutdown();
-	hw_dbg("syscore_shutdown done\n");
 }
 
 /**
@@ -375,7 +369,6 @@ void kernel_restart(char *cmd)
 		printk(KERN_EMERG "Restarting system.\n");
 	else
 		printk(KERN_EMERG "Restarting system with command '%s'.\n", cmd);
-
 	kmsg_dump(KMSG_DUMP_RESTART);
 	machine_restart(cmd);
 }
@@ -383,15 +376,11 @@ EXPORT_SYMBOL_GPL(kernel_restart);
 
 static void kernel_shutdown_prepare(enum system_states state)
 {
-	hw_dbg("calling notifiers\n");
 	blocking_notifier_call_chain(&reboot_notifier_list,
 		(state == SYSTEM_HALT)?SYS_HALT:SYS_POWER_OFF, NULL);
-	hw_dbg("blocking_notifier_call_chain done\n");
 	system_state = state;
 	usermodehelper_disable();
-	hw_dbg("usermodehelper_disable done\n");
 	device_shutdown();
-	hw_dbg("device_shutdown done\n");
 }
 /**
  *	kernel_halt - halt the system
