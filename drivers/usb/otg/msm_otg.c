@@ -1331,7 +1331,6 @@ static int msm_otg_notify_power_supply(struct msm_otg *motg, unsigned mA)
 			goto psy_error;
 		if (power_supply_set_current_limit(psy, 1000*mA))
 			goto psy_error;
-	/* remove huawei code */
 	} else if (motg->cur_power > 0 && (mA == 0 || mA == 2)) {
 		/* Disable charging */
 		if (power_supply_set_online(psy, false))
@@ -4603,7 +4602,6 @@ static int __init msm_otg_probe(struct platform_device *pdev)
 	}
 
 	motg->usb_psy.name = "usb";
-	/* remove huawei code */
 	motg->usb_psy.type = POWER_SUPPLY_TYPE_USB;
 	motg->usb_psy.supplied_to = otg_pm_power_supplied_to;
 	motg->usb_psy.num_supplicants = ARRAY_SIZE(otg_pm_power_supplied_to);

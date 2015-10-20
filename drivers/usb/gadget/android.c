@@ -2366,11 +2366,6 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	strlcpy(buf, buff, sizeof(buf));
 	b = strim(buf);
 
-    /* print informatin for debug */    
-#ifdef CONFIG_HUAWEI_USB
-	printk("%s: %s\n", __func__, buf);
-#endif	
-
 	while (b) {
 		conf_str = strsep(&b, ":");
 		if (conf_str) {
